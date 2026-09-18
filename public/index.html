@@ -16,18 +16,69 @@
     font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
     background: var(--bg);
     color: var(--text);
-    max-width: 560px;
-    margin: 40px auto;
-    padding: 0 16px;
+    margin: 0;
+    padding: 24px 16px 60px;
   }
-  h1 { font-size: 1.4rem; margin-bottom: 4px; }
+  h1 { font-size: 1.4rem; margin: 0 0 4px; }
   p.subtitle { color: #666; margin-top: 0; margin-bottom: 24px; }
+
+  .layout {
+    max-width: 900px;
+    margin: 0 auto;
+    display: flex;
+    flex-wrap: wrap-reverse;
+    gap: 24px;
+    align-items: flex-start;
+  }
+  .hoofd { flex: 2 1 420px; min-width: 300px; }
+  .zijbalk {
+    flex: 1 1 260px;
+    min-width: 240px;
+    position: sticky;
+    top: 24px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+    background: white;
+  }
+  .zijbalk h2 { font-size: 1.05rem; margin: 0 0 12px; }
+  .zijbalk .regel {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.9rem;
+    padding: 4px 0;
+    border-bottom: 1px dashed var(--border);
+  }
+  .zijbalk .regel:last-of-type { border-bottom: none; }
+  .zijbalk .totaal {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    font-weight: 700;
+  }
+  .zijbalk .placeholder { color: #999; font-size: 0.85rem; }
+  .zijbalk .groepslijst { margin-top: 6px; font-size: 0.85rem; }
+  .zijbalk .groepslijst div { padding: 2px 0; }
+  .splits-badge {
+    display: inline-block;
+    margin-top: 8px;
+    padding: 2px 8px;
+    border-radius: 12px;
+    background: #fdf1d6;
+    color: #8a6a1e;
+    font-size: 0.75rem;
+  }
+
   fieldset {
     border: 1px solid var(--border);
     border-radius: 8px;
     padding: 16px;
     margin-bottom: 20px;
+    background: white;
   }
+  fieldset[disabled] { opacity: 0.5; }
   legend { font-weight: 600; padding: 0 6px; }
   label { display: block; margin-top: 12px; margin-bottom: 4px; font-size: 0.9rem; }
   input, select {
@@ -45,8 +96,11 @@
     border-radius: 6px;
     font-size: 1rem;
     cursor: pointer;
+    margin-top: 12px;
   }
   button:disabled { opacity: 0.5; cursor: not-allowed; }
+  button.secundair { background: white; color: var(--accent); border: 1px solid var(--accent); }
+
   .slots {
     display: flex;
     flex-wrap: wrap;
@@ -62,7 +116,15 @@
     background: white;
   }
   .slot.selected { background: var(--accent); color: white; border-color: var(--accent); }
-  .slot.vol { opacity: 0.4; cursor: not-allowed; text-decoration: line-through; }
+
+  .voorstel-groep {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    margin-top: 8px;
+    background: #fafafa;
+  }
+
   #resultaat {
     margin-top: 20px;
     padding: 14px;
@@ -70,136 +132,252 @@
   }
   #resultaat.ok { background: #e5f4ee; border: 1px solid #9fd3bf; }
   #resultaat.fout { background: #fbeaea; border: 1px solid #e5a9a9; }
-  .hint { font-size: 0.8rem; color: #888; margin-top: 4px; }
+  .hint { font-size: 0.85rem; color: #888; margin-top: 6px; }
 </style>
 </head>
 <body>
-  <h1>Testboekproces</h1>
-  <p class="subtitle">Los prototype dat rechtstreeks tegen de Recras API praat &mdash; los van de standaard Recras-widget.</p>
+  <div class="layout">
+    <div class="hoofd">
+      <h1>Testboekproces</h1>
+      <p class="subtitle">Los prototype dat rechtstreeks tegen de Recras API praat, inclusief automatische groep-splitsing bij overboeking.</p>
 
-  <fieldset>
-    <legend>1. Activiteit en datum</legend>
-    <label for="product">Activiteit</label>
-    <select id="product"></select>
+      <fieldset id="stap1">
+        <legend>1. Activiteit en aantal personen</legend>
+        <label for="product">Activiteit</label>
+        <select id="product"></select>
 
-    <label for="datum">Datum</label>
-    <input type="date" id="datum" />
+        <label for="aantal">Aantal personen</label>
+        <input type="number" id="aantal" min="1" value="1" />
 
-    <button id="zoekBtn" type="button">Zoek beschikbare tijden</button>
+        <button id="naarStap2Btn" type="button">Volgende: datum en tijd kiezen</button>
+      </fieldset>
 
-    <div class="slots" id="slots"></div>
-    <p class="hint" id="slotsHint"></p>
-  </fieldset>
+      <fieldset id="stap2" disabled>
+        <legend>2. Datum en tijd</legend>
+        <label for="datum">Datum</label>
+        <input type="date" id="datum" />
 
-  <fieldset>
-    <legend>2. Gegevens</legend>
-    <label for="voornaam">Voornaam</label>
-    <input type="text" id="voornaam" />
+        <button id="zoekBtn" type="button">Zoek beschikbaarheid</button>
 
-    <label for="achternaam">Achternaam</label>
-    <input type="text" id="achternaam" />
+        <div id="planResultaat"></div>
+      </fieldset>
 
-    <label for="email">E-mailadres</label>
-    <input type="email" id="email" />
+      <fieldset id="stap3" disabled>
+        <legend>3. Gegevens</legend>
+        <label for="voornaam">Voornaam</label>
+        <input type="text" id="voornaam" />
 
-    <label for="telefoon">Telefoonnummer (optioneel)</label>
-    <input type="tel" id="telefoon" />
+        <label for="achternaam">Achternaam</label>
+        <input type="text" id="achternaam" />
 
-    <label for="aantal">Aantal personen</label>
-    <input type="number" id="aantal" min="1" value="1" />
-  </fieldset>
+        <label for="email">E-mailadres</label>
+        <input type="email" id="email" />
 
-  <button id="boekBtn" type="button" disabled>Boeking bevestigen</button>
+        <label for="telefoon">Telefoonnummer (optioneel)</label>
+        <input type="tel" id="telefoon" />
 
-  <div id="resultaat" style="display:none;"></div>
+        <button id="boekBtn" type="button">Boeking bevestigen</button>
+      </fieldset>
+
+      <div id="resultaat" style="display:none;"></div>
+    </div>
+
+    <div class="zijbalk">
+      <h2>Boekingsoverzicht</h2>
+      <div id="zijbalkInhoud">
+        <p class="placeholder">Vul de activiteit en het aantal personen in om een prijsindicatie te zien.</p>
+      </div>
+    </div>
+  </div>
 
 <script>
   const productSelect = document.getElementById('product');
+  const aantalInput = document.getElementById('aantal');
+  const naarStap2Btn = document.getElementById('naarStap2Btn');
+  const stap2 = document.getElementById('stap2');
+  const stap3 = document.getElementById('stap3');
   const datumInput = document.getElementById('datum');
   const zoekBtn = document.getElementById('zoekBtn');
-  const slotsEl = document.getElementById('slots');
-  const slotsHint = document.getElementById('slotsHint');
+  const planResultaat = document.getElementById('planResultaat');
   const boekBtn = document.getElementById('boekBtn');
   const resultaatEl = document.getElementById('resultaat');
+  const zijbalkInhoud = document.getElementById('zijbalkInhoud');
 
-  let gekozenSlot = null; // ISO-string van het gekozen startmoment
+  let producten = [];
+  let huidigPlan = null; // laatste succesvolle plan-respons van de server
 
-  // Vandaag als standaarddatum
   datumInput.valueAsDate = new Date();
 
   async function laadProducten() {
     const res = await fetch('/api/producten');
-    const producten = await res.json();
+    producten = await res.json();
     productSelect.innerHTML = producten
       .map((p) => `<option value="${p.slug}">${p.naam} (${p.duur_minuten} min)</option>`)
       .join('');
+    verversZijbalk();
   }
 
-  function isoDatum(d) {
-    return d.toISOString().slice(0, 10);
+  function huidigProduct() {
+    return producten.find((p) => p.slug === productSelect.value);
   }
 
-  async function zoekBeschikbaarheid() {
-    gekozenSlot = null;
-    boekBtn.disabled = true;
-    slotsEl.innerHTML = '';
-    slotsHint.textContent = 'Bezig met laden...';
+  function euro(bedrag) {
+    if (bedrag == null) return '-';
+    return new Intl.NumberFormat('nl-NL', { style: 'currency', currency: 'EUR' }).format(bedrag);
+  }
+
+  function tijdNotatie(iso) {
+    return new Date(iso).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' });
+  }
+
+  // Zijbalk toont altijd de actuele stand: gekozen activiteit, aantal,
+  // prijsindicatie, en zodra bekend de voorgestelde tijd(en).
+  function verversZijbalk() {
+    const product = huidigProduct();
+    const aantal = parseInt(aantalInput.value, 10) || 0;
+
+    if (!product) {
+      zijbalkInhoud.innerHTML = '<p class="placeholder">Activiteiten worden geladen...</p>';
+      return;
+    }
+
+    let html = `
+      <div class="regel"><span>Activiteit</span><strong>${product.naam}</strong></div>
+      <div class="regel"><span>Aantal personen</span><strong>${aantal}</strong></div>
+    `;
+
+    if (product.prijs_per_persoon != null) {
+      html += `<div class="regel"><span>Prijs per persoon</span><span>${euro(product.prijs_per_persoon)}</span></div>`;
+    }
+
+    if (huidigPlan && huidigPlan.plan) {
+      const { plan } = huidigPlan;
+      if (plan.status === 'gesplitst') {
+        html += `<span class="splits-badge">Groep wordt gesplitst</span>`;
+        html += '<div class="groepslijst">';
+        plan.groepen.forEach((g, i) => {
+          html += `<div>Groep ${i + 1}: ${g.aantal} pers. om ${tijdNotatie(g.startmoment)}</div>`;
+        });
+        html += '</div>';
+      } else if (plan.status === 'enkel' && plan.opties && plan.opties.length) {
+        html += `<p class="hint">Kies hiernaast nog een tijd uit ${plan.opties.length} mogelijke momenten.</p>`;
+      } else if (plan.status === 'onmogelijk') {
+        html += `<p class="hint">${plan.reden}</p>`;
+      }
+    }
+
+    if (huidigPlan && huidigPlan.totale_prijs != null) {
+      html += `<div class="totaal"><span>Totaal (indicatie)</span><span>${euro(huidigPlan.totale_prijs)}</span></div>`;
+    }
+
+    zijbalkInhoud.innerHTML = html;
+  }
+
+  function naarStap2() {
+    stap2.disabled = false;
+    stap2.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    verversZijbalk();
+  }
+
+  async function zoekPlanning() {
+    huidigPlan = null;
+    stap3.disabled = true;
+    planResultaat.innerHTML = '<p class="hint">Bezig met laden...</p>';
+    verversZijbalk();
 
     const slug = productSelect.value;
-    const begin = datumInput.value; // gekozen dag zelf, exclusief in de API
-    const eindDatum = new Date(datumInput.value);
-    eindDatum.setDate(eindDatum.getDate() + 1);
-    const eind = isoDatum(eindDatum); // dag erna, zodat de gekozen dag wordt meegenomen
+    const aantal = parseInt(aantalInput.value, 10);
+    const datum = datumInput.value;
 
     try {
-      const res = await fetch(
-        `/api/beschikbaarheid/${slug}?begin=${begin}&eind=${eind}`
-      );
+      const res = await fetch(`/api/plan/${slug}?datum=${datum}&aantal=${aantal}`);
       const data = await res.json();
-
       if (!res.ok) throw new Error(data.error || 'Onbekende fout');
 
-      if (!data.length) {
-        slotsHint.textContent = 'Geen startmomenten gevonden op deze dag.';
-        return;
-      }
-
-      slotsHint.textContent = 'Kies een tijd:';
-      data.forEach((moment) => {
-        const tijd = new Date(moment.startmoment).toLocaleTimeString('nl-NL', {
-          hour: '2-digit',
-          minute: '2-digit',
-        });
-        // Pak de eerste locatie (of null-locatie) als representatieve capaciteit
-        const beschikbaarheid = moment.locaties[0]?.beschikbaarheid ?? 0;
-        const vol = beschikbaarheid <= 0;
-
-        const el = document.createElement('div');
-        el.className = 'slot' + (vol ? ' vol' : '');
-        el.textContent = vol ? `${tijd} (vol)` : `${tijd} (${beschikbaarheid} vrij)`;
-        if (!vol) {
-          el.addEventListener('click', () => {
-            document.querySelectorAll('.slot').forEach((s) => s.classList.remove('selected'));
-            el.classList.add('selected');
-            gekozenSlot = moment.startmoment;
-            boekBtn.disabled = false;
-          });
-        }
-        slotsEl.appendChild(el);
-      });
+      huidigPlan = data;
+      renderPlan(data.plan);
+      verversZijbalk();
     } catch (err) {
-      slotsHint.textContent = 'Fout bij ophalen: ' + err.message;
+      planResultaat.innerHTML = `<p class="hint">Fout bij ophalen: ${err.message}</p>`;
     }
+  }
+
+  // Bewaart welke tijd(en) definitief gekozen zijn, klaar om te boeken.
+  let gekozenGroepen = null;
+
+  function renderPlan(plan) {
+    gekozenGroepen = null;
+
+    if (plan.status === 'onmogelijk') {
+      planResultaat.innerHTML = `<p class="hint">${plan.reden}</p>`;
+      return;
+    }
+
+    if (plan.status === 'gesplitst') {
+      // Bij een gesplitste groep ligt het tijdschema al vast (evenredig
+      // verdeeld over de eerstvolgende geschikte momenten). De klant
+      // bevestigt het voorstel in plaats van zelf te kiezen.
+      let html = `<p class="hint">Deze groep is groter dan de capaciteit per moment (${plan.capaciteit}) en wordt daarom automatisch verdeeld:</p>`;
+      plan.groepen.forEach((g, i) => {
+        html += `
+          <div class="voorstel-groep">
+            <strong>Groep ${i + 1}</strong> - ${g.aantal} personen om ${tijdNotatie(g.startmoment)}
+          </div>
+        `;
+      });
+      html += `<button id="bevestigVoorstelBtn" type="button">Voorstel bevestigen</button>`;
+      planResultaat.innerHTML = html;
+
+      document.getElementById('bevestigVoorstelBtn').addEventListener('click', () => {
+        gekozenGroepen = plan.groepen.map((g) => ({ aantal: g.aantal, begin: g.startmoment }));
+        stap3.disabled = false;
+        stap3.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+      return;
+    }
+
+    // status === 'enkel': normale tijdkeuze, groep past in 1 moment
+    if (!plan.opties.length) {
+      planResultaat.innerHTML = '<p class="hint">Geen geschikte tijden gevonden op deze dag voor dit aantal personen.</p>';
+      return;
+    }
+
+    const slotsHtml = plan.opties
+      .map(
+        (optie) =>
+          `<div class="slot" data-moment="${optie.startmoment}">${tijdNotatie(optie.startmoment)} (${optie.beschikbaarheid} vrij)</div>`
+      )
+      .join('');
+
+    planResultaat.innerHTML = `<p class="hint">Kies een tijd:</p><div class="slots">${slotsHtml}</div>`;
+
+    planResultaat.querySelectorAll('.slot').forEach((el) => {
+      el.addEventListener('click', () => {
+        planResultaat.querySelectorAll('.slot').forEach((s) => s.classList.remove('selected'));
+        el.classList.add('selected');
+        const aantal = parseInt(aantalInput.value, 10);
+        gekozenGroepen = [{ aantal, begin: el.dataset.moment }];
+        stap3.disabled = false;
+        stap3.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    });
   }
 
   async function boekAf() {
     resultaatEl.style.display = 'none';
+
+    if (!gekozenGroepen) {
+      resultaatEl.className = 'fout';
+      resultaatEl.textContent = 'Kies eerst een tijd (of bevestig het groepsvoorstel) voordat je boekt.';
+      resultaatEl.style.display = 'block';
+      return;
+    }
+
     boekBtn.disabled = true;
 
     const payload = {
       slug: productSelect.value,
-      begin: gekozenSlot,
-      aantal: parseInt(document.getElementById('aantal').value, 10),
+      groepen: gekozenGroepen,
       klant: {
         voornaam: document.getElementById('voornaam').value,
         achternaam: document.getElementById('achternaam').value,
@@ -209,19 +387,23 @@
     };
 
     try {
-      const res = await fetch('/api/boeking', {
+      const res = await fetch('/api/boeking-groep', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
       const data = await res.json();
-
       if (!res.ok) throw new Error(data.error || 'Onbekende fout');
+
+      const boeking = data.boeking;
+      const regelsHtml = (boeking.boekingsregels || [])
+        .map((r) => `- ${r.aantal} personen om ${tijdNotatie(r.begin)}`)
+        .join('<br>');
 
       resultaatEl.className = 'ok';
       resultaatEl.innerHTML = `
-        <strong>Boeking gelukt!</strong><br />
-        Boekingsnummer: ${data.boeking.id}<br />
+        <strong>Boeking gelukt!</strong> (boekingsnummer ${boeking.id})<br />
+        ${regelsHtml}<br />
         Klant: ${data.klant.displaynaam || data.klant.naam} (${data.nieuweKlant ? 'nieuw aangemaakt' : 'bestaande klant hergebruikt'})
       `;
     } catch (err) {
@@ -233,7 +415,10 @@
     }
   }
 
-  zoekBtn.addEventListener('click', zoekBeschikbaarheid);
+  productSelect.addEventListener('change', verversZijbalk);
+  aantalInput.addEventListener('input', verversZijbalk);
+  naarStap2Btn.addEventListener('click', naarStap2);
+  zoekBtn.addEventListener('click', zoekPlanning);
   boekBtn.addEventListener('click', boekAf);
 
   laadProducten();

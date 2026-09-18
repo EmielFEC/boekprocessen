@@ -128,8 +128,95 @@ async function maakBoeking({
   return data;
 }
 
+/**
+ * Telt `duur_minuten` op bij een ISO-tijdstip om het eindtijdstip van een
+ * boekingsregel te berekenen.
+ */
+function berekenEind(beginIso, duurMinuten) {
+  const d = new Date(beginIso);
+  d.setMinutes(d.getMinutes() + (duurMinuten || 0));
+  return d.toISOString();
+}
+
+/**
+ * Maakt EEN boeking aan met MEERDERE boekingsregels voor hetzelfde product,
+ * voor een groep die over meerdere startmomenten verdeeld is (bijv. 22
+ * personen -> regels van 7, 7 en 8 personen op verschillende tijden).
+ *
+ * Werkwijze (in 2 stappen, want de create-endpoint van Recras kan maar 1
+ * boekingsregel tegelijk aanmaken):
+ *  1. POST /boekingen met de eerste subgroep -> dit levert de boeking én
+ *     zijn eerste (automatisch aangemaakte) boekingsregel op.
+ *  2. PUT /boekingen/{id} om die eerste regel te corrigeren naar de juiste
+ *     aantal/tijd, en de overige subgroepen als nieuwe boekingsregels toe te
+ *     voegen. Volgens de Recras-documentatie hoeft bij het toevoegen van een
+ *     nieuwe boekingsregel geen bijbehorende kostenregel meegestuurd te
+ *     worden ("this happens automatically") - we sturen de bestaande
+ *     kosten-structuur dus ongewijzigd terug, puur omdat `boekingsregels` en
+ *     `kosten` samen meegestuurd moeten worden.
+ */
+async function maakGesplitsteBoeking({
+  klant_id,
+  product_id,
+  book_process_id,
+  duur_minuten,
+  groepen, // [{ aantal, begin }, ...] - minstens 2 entries
+  status = 'informatie',
+  bijzonderheden,
+}) {
+  const totaalAantal = groepen.reduce((som, g) => som + g.aantal, 0);
+  const eersteGroep = groepen[0];
+
+  const createPayload = {
+    klant_id,
+    begin: eersteGroep.begin,
+    personen: totaalAantal,
+    product_id,
+    status,
+  };
+  if (book_process_id) createPayload.book_process_id = book_process_id;
+  if (bijzonderheden) createPayload.bijzonderheden = bijzonderheden;
+
+  const { data: boeking } = await recrasRequest('/boekingen', {
+    method: 'POST',
+    body: createPayload,
+  });
+
+  const eersteRegel = boeking.boekingsregels?.[0];
+  if (!eersteRegel) {
+    throw new Error(
+      'Onverwacht: Recras gaf geen boekingsregel terug bij het aanmaken van de boeking'
+    );
+  }
+
+  const totaalGroepen = groepen.length;
+  const nieuweBoekingsregels = groepen.map((groep, i) => {
+    const basis = {
+      aantal: groep.aantal,
+      begin: groep.begin,
+      eind: berekenEind(groep.begin, duur_minuten),
+      opmerking: `Subgroep ${i + 1} van ${totaalGroepen} (automatisch gesplitst wegens groepsgrootte)`,
+    };
+    // De eerste subgroep hergebruikt de al bestaande boekingsregel (met id),
+    // de rest zijn nieuwe regels (zonder id, met product_id erbij).
+    return i === 0 ? { id: eersteRegel.id, ...basis } : { product_id, ...basis };
+  });
+
+  const { data: bijgewerkteBoeking } = await recrasRequest(`/boekingen/${boeking.id}`, {
+    method: 'PUT',
+    body: {
+      id: boeking.id,
+      boekingsregels: nieuweBoekingsregels,
+      kosten: boeking.kosten,
+    },
+  });
+
+  return bijgewerkteBoeking;
+}
+
 module.exports = {
   getBeschikbaarheid,
   vindOfMaakKlant,
   maakBoeking,
+  maakGesplitsteBoeking,
 };

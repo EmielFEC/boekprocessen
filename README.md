@@ -6,13 +6,31 @@ een schaalbaar, custom boeksysteem voor de FEC-website.
 
 ## Wat dit doet
 
-1. Leest beschikbaarheid (startmomenten + capaciteit) van een product uit via
-   `GET /api2/producten/{id}/beschikbaarheid`.
-2. Laat een bezoeker een tijdstip en zijn gegevens invullen.
-3. Zoekt of maakt een klant aan via `POST /api2/klanten` (Recras dedupliceert
-   zelf op naam + e-mailadres: 201 = nieuwe klant, 200 = samengevoegd met
-   bestaande klant).
-4. Maakt de boeking aan via `POST /api2/boekingen`.
+1. Bezoeker kiest eerst de activiteit en het **aantal personen**.
+2. De server leest beschikbaarheid (startmomenten + capaciteit) van dat
+   product uit via `GET /api2/producten/{id}/beschikbaarheid` voor de
+   gekozen dag, en berekent een boekingsvoorstel:
+   - Past de groep in 1 moment? Dan kiest de bezoeker gewoon een tijd, zoals
+     bij een normale boeking.
+   - Is de groep te groot voor 1 moment (bijv. 22 personen op een activiteit
+     met capaciteit 10)? Dan wordt de groep automatisch **zo gelijk mogelijk
+     verdeeld** over meerdere opeenvolgende momenten (bijv. 8 + 7 + 7), met
+     een voorgesteld tijdschema erbij (zie `planning.js`).
+3. De zijbalk toont continu een boekingsoverzicht: activiteit, aantal,
+   prijsindicatie en - zodra bekend - de voorgestelde tijd(en) per (sub)groep.
+4. Bij bevestigen: zoekt of maakt een klant aan via `POST /api2/klanten`
+   (Recras dedupliceert zelf op naam + e-mailadres: 201 = nieuwe klant, 200 =
+   samengevoegd met bestaande klant). Daarna wordt er **1 boeking** aangemaakt
+   met **1 boekingsregel per (sub)groep**, niet meerdere losse boekingen:
+   - Eerst een normale `POST /api2/boekingen` voor de eerste subgroep (dit
+     levert de boeking en zijn eerste boekingsregel op).
+   - Daarna, alleen als er gesplitst is, een `PUT /api2/boekingen/{id}` die
+     die eerste regel corrigeert naar de juiste tijd/aantal en de overige
+     subgroepen als extra boekingsregels toevoegt. Elke regel krijgt een
+     `opmerking` als "Subgroep 2 van 3 (automatisch gesplitst wegens
+     groepsgrootte)" zodat het voor de vloer duidelijk is waarom er meerdere
+     regels bij 1 boeking staan.
+   - Zie `recras.js` (`maakGesplitsteBoeking`) voor de exacte implementatie.
 
 Dit is bewust nog geen "echt" boekproces via de `bookprocesses/book`
 Alpha-API (met de form/recap/links-structuur) - dat is stap 2. Deze opzet
@@ -25,7 +43,8 @@ Springkussen prima werkt en makkelijker te doorgronden is als eerste test.
 recras-boekproces/
   server.js       Express-server met de API-routes
   recras.js       Alle communicatie met de Recras API (1 plek, herbruikbaar)
-  products.json   Koppeling tussen jouw "slugs" en Recras product-ids
+  planning.js     Groep-splitsingslogica (los te testen, geen Recras-calls)
+  products.json   Koppeling tussen jouw "slugs" en Recras product-ids/prijzen
   public/
     index.html    Testpagina (vanilla HTML/JS, geen framework)
   .env.example    Voorbeeldconfiguratie (kopieer naar .env)
@@ -98,29 +117,75 @@ Voeg een regel toe aan `products.json`, geen code nodig:
   "naam": "Lasergame",
   "duur_minuten": 30,
   "locatie_id": null,
-  "book_process_id": null
+  "book_process_id": null,
+  "prijs_per_persoon": 12.5
 }
 ```
 
 De slug (`lasergame`) is wat je in de URL en de frontend gebruikt.
+`prijs_per_persoon` is puur voor de prijsindicatie in de zijbalk (zie
+hieronder waarom dit nog handmatig is) en mag weggelaten worden.
+
+## Hoe de groep-splitsing werkt (en de aannames erachter)
+
+De logica zit in `planning.js`, los van de Recras-communicatie, zodat je 'm
+kunt lezen en testen zonder een echte API-verbinding nodig te hebben.
+
+1. De server haalt alle startmomenten van de gekozen dag op, met per moment
+   de beschikbare capaciteit.
+2. **Volledige capaciteit per moment** wordt afgeleid als de hoogste
+   beschikbaarheid die die dag ergens gezien wordt. Dit is een aanname: als
+   op de gekozen dag toevallig ieder moment al deels volgeboekt is, wordt de
+   werkelijke volledige capaciteit onderschat. Voor een preciezere aanpak zou
+   je dit getal per product apart moeten vastleggen (net als
+   `prijs_per_persoon` in `products.json`) in plaats van het af te leiden.
+3. Past de groep in 1 moment? Dan krijgt de bezoeker gewoon een keuze uit alle
+   momenten die groot genoeg zijn.
+4. Past de groep niet in 1 moment? Dan wordt het aantal benodigde groepen
+   berekend (`Math.ceil(aantal / capaciteit)`) en het aantal personen zo
+   gelijk mogelijk verdeeld (bijv. 22 bij capaciteit 10 -> 8 + 7 + 7). Elke
+   subgroep krijgt vervolgens het eerstvolgende moment die dag dat groot
+   genoeg is. Dit hoeven **niet per se aaneengesloten tijden** te zijn (als
+   een tussenliggend moment toevallig al te vol zit, wordt die overgeslagen)
+   - voor de meeste dagen met normale bezetting geeft dit gewoon nette
+     opeenvolgende tijden.
+5. Past de groep helemaal niet (te weinig momenten die dag), dan krijgt de
+   bezoeker een duidelijke melding in plaats van een gedeeltelijk voorstel.
+
+Wat dit (bewust) nog niet doet: rekening houden met personeelsbezetting,
+sluitingstijden versus laatste startmoment, of een voorkeur voor "zo vroeg
+mogelijk op een dag" versus "zo aaneengesloten mogelijk". Dat zijn keuzes die
+je het beste maakt nadat je met échte Recras-data hebt getest hoe de
+startmomenten er in de praktijk uitzien.
 
 ## Wat nog ontbreekt richting een schaalbaar systeem
 
-Dit prototype dekt het gelukkige pad voor één los product. Voor productie op
-de FEC-website (of een subsite) is minstens dit nog nodig:
+Dit prototype dekt inmiddels het gelukkige pad inclusief groep-splitsing voor
+één los product. Voor productie op de FEC-website (of een subsite) is
+minstens dit nog nodig:
 
-- **Groep-splitsing bij overboeking.** Recras zelf heeft dit niet ingebouwd
-  (het weigert simpelweg boven capaciteit). De logica om bijvoorbeeld 30
-  personen op lasergame (capaciteit 20) te splitsen in twee groepen van 15
-  met een voorgesteld tijdschema, moet in deze laag gebouwd worden: kijk naar
-  de bestaande bowling-baantoewijzingstool voor het soort algoritme
-  (grootste eerst, capaciteit per tijdslot, compact plannen).
+- **De boeking-met-meerdere-regels flow is nog niet getest tegen echte
+  Recras-data.** De aanpak in `maakGesplitsteBoeking` volgt de Recras-
+  documentatie zo precies mogelijk (een nieuwe boekingsregel toevoegen via
+  een `PUT` genereert automatisch de bijbehorende kostenregel, aldus de
+  docs), maar dit is de meest onzekere plek in deze opzet. **Test dit als
+  eerste** zodra je een echte token hebt: boek een groep van bijvoorbeeld 15
+  personen en controleer in Recras zelf of de boeking er correct uitziet
+  (juiste aantallen per regel, juiste totaalprijs, geen dubbele of
+  ontbrekende kostenregels). Krijg je een foutmelding, dan toont het
+  testscherm de ruwe Recras-foutmelding (`details` in de JSON-respons),
+  stuur die door dan zoeken we het gericht uit.
 - **Race conditions.** Twee gelijktijdige boekingen op hetzelfde tijdslot
   kunnen elkaar nu nog inhalen. Een tijdelijke "hold" op een tijdslot terwijl
-  iemand het formulier afrondt is nodig voordat dit live gaat.
-- **Prijsweergave.** Deze opzet toont nog geen prijs. De `validate`-stap uit
-  de bookprocess-API (of de prijsvelden van het product zelf) kan hiervoor
-  gebruikt worden, zodat de weergegeven prijs altijd matcht met Recras.
+  iemand het formulier afrondt is nodig voordat dit live gaat. Dit is extra
+  belangrijk bij een gesplitste groep: tussen het tonen van het voorstel en
+  het bevestigen ervan kan een ander de tijd net volboeken.
+- **Prijsweergave is nog een indicatie.** De prijs komt nu uit het handmatig
+  ingevulde `prijs_per_persoon` in `products.json`, niet rechtstreeks uit
+  Recras. Zodra een product complexere prijsregels heeft (staffels, dynamic
+  pricing, kortingen), klopt dit getal niet meer. De `validate`-stap uit de
+  bookprocess-API (of de prijsvelden van het product zelf via de Products-
+  endpoint) kan dit later vervangen door een altijd kloppend bedrag.
 - **Validatie en foutafhandeling richting de klant.** Nu worden Recras-
   foutmeldingen ruw doorgegeven; voor een klantgerichte site wil je dit
   vertalen naar begrijpelijke Nederlandse meldingen.
@@ -135,6 +200,12 @@ de FEC-website (of een subsite) is minstens dit nog nodig:
   activiteit kiezen, dan extra's zoals eten): dat vraagt om de stap-voor-stap
   `bookprocesses/book` API in plaats van deze rechtstreekse aanpak, of een
   eigen stappen-wizard die meerdere `boekingsregels` in één boeking bundelt.
+
+## API-routes van deze server (voor eigen gebruik/uitbreiding)
+
+- `GET /api/producten` - lijst van geconfigureerde activiteiten
+- `GET /api/plan/:slug?datum=YYYY-MM-DD&aantal=N` - boekingsvoorstel (enkel of gesplitst) plus prijsindicatie
+- `POST /api/boeking-groep` - maakt 1 of meerdere boekingen aan op basis van zo'n voorstel
 
 ## Relevante Recras API-referenties
 

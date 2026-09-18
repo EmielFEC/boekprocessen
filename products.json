@@ -6,6 +6,8 @@
     "naam": "Springkussen (TEST)",
     "duur_minuten": 15,
     "locatie_id": null,
-    "book_process_id": null
+    "book_process_id": null,
+    "prijs_per_persoon": 15,
+    "_prijs_comment": "Handmatig overgenomen uit de Recras-productinstellingen (verkoopsprijs incl. btw, per persoon). Nog niet live opgehaald uit Recras zelf - zie README voor waarom en hoe dat later kan."
   }
 }
