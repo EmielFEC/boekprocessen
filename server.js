@@ -9,7 +9,8 @@ const {
   planBoeking,
   planVervolgSchema,
   berekenBenodigdeEenheden,
-  filterOverlap,
+  annoteerOverlap,
+  heeftConflict,
 } = require('./planning');
 
 // Maximale groepsgrootte voor dit boekproces (bevestigd door Emiel).
@@ -109,27 +110,42 @@ function mandjeResponse(mandjeId, mandje) {
 }
 
 // Alle reeds in het mandje bezette tijdsintervallen (over alle producten
-// heen), zodat een nieuwe activiteit niet kan overlappen. Simplificatie:
-// we gaan er (voorlopig) van uit dat de hele bezoekersgroep gelijktijdig
-// steeds maar 1 activiteit doet, ook als een deel van de groep die
-// activiteit doet ("deelgroep") - zie README voor waarom dit een bewuste
-// vereenvoudiging is richting een latere uitbreiding.
-function bezetteIntervallen(mandje, exclusiefItemId) {
-  const intervallen = [];
+// heen), met daarbij welk item/activiteit en hoeveel personen het betreft.
+// Dit wordt NIET meer gebruikt om overlappende momenten te verwijderen -
+// zie annoteerOverlap()/heeftConflict() in planning.js: we annoteren elk
+// moment met hoeveel personen er dan al elders bezig zijn ("overlapLast")
+// en pas als dat + de nieuwe aanvraag de totale bezoekersgroep zou
+// overschrijden, is er een echt conflict. Zo kan een deelgroep die
+// Lasergame doet, tegelijk een andere deelgroep een andere activiteit laten
+// boeken, zolang het totaal nooit boven mandje.aantal komt.
+function bezetteItemsInfo(mandje, exclusiefItemId) {
+  const items = [];
   for (const item of mandje.items) {
     if (item.id === exclusiefItemId) continue;
     for (const groep of item.groepen) {
-      intervallen.push({ begin: groep.begin, eind: groep.eind });
+      items.push({
+        itemId: item.id,
+        slug: item.slug,
+        naam: item.naam,
+        aantal: groep.aantal,
+        begin: groep.begin,
+        eind: groep.eind,
+      });
     }
   }
-  return intervallen;
+  return items;
 }
 
-async function haalBeschikbareMomenten(product, datum, mandje, exclusiefItemId) {
+// Haalt de startmomenten van een product op een dag op en annoteert elk
+// moment met overlap-info t.o.v. de rest van het mandje (overlapLast,
+// overlapItems). Filtert NIETS weg - alle momenten blijven staan, ook
+// volgeboekte of conflicterende, zodat de UI ze greyed-out/rood kan tonen
+// in plaats van te laten verdwijnen.
+async function haalMomentenMetOverlapInfo(product, datum, mandje, exclusiefItemId) {
   const { begin, eind } = dagBereik(datum);
   const ruweMomenten = await recras.getBeschikbaarheid(product.product_id, begin, eind);
-  const bezet = bezetteIntervallen(mandje, exclusiefItemId);
-  return filterOverlap(ruweMomenten, product.duur_minuten, bezet);
+  const bezet = bezetteItemsInfo(mandje, exclusiefItemId);
+  return annoteerOverlap(ruweMomenten, product.duur_minuten, bezet);
 }
 
 // Personen-capaciteit van 1 moment: bij per-baan/tafel-producten (per_eenheid_personen
@@ -170,7 +186,7 @@ app.get('/api/producten', async (req, res) => {
       let vandaagVol = null;
       if (mandje) {
         try {
-          const momenten = await haalBeschikbareMomenten(p, mandje.datum, mandje);
+          const momenten = await haalMomentenMetOverlapInfo(p, mandje.datum, mandje);
           heeftStartmomenten = momenten.length > 0;
           vandaagVol = heeftStartmomenten && !momenten.some((m) => personenCapaciteitVoorMoment(m, p) > 0);
         } catch (err) {
@@ -259,8 +275,8 @@ app.get('/api/activiteit/:slug/plan', async (req, res) => {
   }
 
   try {
-    const momenten = await haalBeschikbareMomenten(product, mandje.datum, mandje);
-    const plan = planBoeking(momenten, aantal, product.per_eenheid_personen);
+    const momenten = await haalMomentenMetOverlapInfo(product, mandje.datum, mandje);
+    const plan = planBoeking(momenten, aantal, product.per_eenheid_personen, mandje.aantal);
     const benodigdeEenheden = berekenBenodigdeEenheden(aantal, product.per_eenheid_personen);
 
     let prijs_per_persoon = null;
@@ -305,14 +321,14 @@ app.get('/api/activiteit/:slug/plan-vervolg', async (req, res) => {
   }
 
   try {
-    const momenten = await haalBeschikbareMomenten(product, mandje.datum, mandje);
+    const momenten = await haalMomentenMetOverlapInfo(product, mandje.datum, mandje);
 
-    const stap1 = planBoeking(momenten, aantal, product.per_eenheid_personen);
+    const stap1 = planBoeking(momenten, aantal, product.per_eenheid_personen, mandje.aantal);
     if (stap1.status !== 'kies_starttijd') {
       return res.status(400).json({ error: 'Deze groep vereist geen (of geen geldige) starttijdkeuze meer - vraag de planning opnieuw op.' });
     }
 
-    const plan = planVervolgSchema(momenten, stap1.groepsgroottes, start, product.per_eenheid_personen);
+    const plan = planVervolgSchema(momenten, stap1.groepsgroottes, start, product.per_eenheid_personen, mandje.aantal);
 
     let prijs_per_persoon = null;
     try {
@@ -381,13 +397,20 @@ app.post('/api/mandje/:mandjeId/toevoegen', async (req, res) => {
     // houdend met de rest van het mandje) en controleer dat elk gekozen
     // moment er nog steeds in staat met genoeg ruimte. Zo voorkomen we dat
     // een client verouderde of gemanipuleerde tijden doorstuurt.
-    const momenten = await haalBeschikbareMomenten(product, mandje.datum, mandje);
+    const momenten = await haalMomentenMetOverlapInfo(product, mandje.datum, mandje);
     for (const groep of genormaliseerdeGroepen) {
       const gevonden = momenten.find((m) => m.startmoment === groep.begin);
       const personenCapaciteit = gevonden ? personenCapaciteitVoorMoment(gevonden, product) : 0;
       if (!gevonden || personenCapaciteit < groep.aantal) {
         return res.status(409).json({
           error: `Het gekozen moment (${groep.begin}) is niet meer beschikbaar voor ${groep.aantal} personen. Ververs de tijden en kies opnieuw.`,
+        });
+      }
+      if (heeftConflict(gevonden, groep.aantal, mandje.aantal)) {
+        return res.status(409).json({
+          error: `Het gekozen moment (${groep.begin}) overlapt met een andere activiteit in je mandje en het totaal aantal personen zou de groepsgrootte overschrijden. Kies een ander tijdstip.`,
+          conflict: true,
+          overlapItems: gevonden.overlapItems,
         });
       }
     }
@@ -467,7 +490,7 @@ app.post('/api/mandje/:mandjeId/boeken', async (req, res) => {
     const product = getProduct(item.slug);
     if (!product) continue; // zou niet moeten kunnen gebeuren
     try {
-      const momenten = await haalBeschikbareMomenten(product, mandje.datum, mandje, item.id);
+      const momenten = await haalMomentenMetOverlapInfo(product, mandje.datum, mandje, item.id);
       for (const groep of item.groepen) {
         const gevonden = momenten.find((m) => m.startmoment === groep.begin);
         const personenCapaciteit = gevonden ? personenCapaciteitVoorMoment(gevonden, product) : 0;
@@ -475,6 +498,14 @@ app.post('/api/mandje/:mandjeId/boeken', async (req, res) => {
           return res.status(409).json({
             error: `${item.naam} om ${groep.begin} is niet meer beschikbaar. Kies een nieuw tijdstip voor deze activiteit.`,
             ongeldigItemId: item.id,
+          });
+        }
+        if (heeftConflict(gevonden, groep.aantal, mandje.aantal)) {
+          return res.status(409).json({
+            error: `${item.naam} om ${groep.begin} overlapt inmiddels met een andere activiteit in je mandje. Kies een nieuw tijdstip voor deze activiteit.`,
+            ongeldigItemId: item.id,
+            conflict: true,
+            overlapItems: gevonden.overlapItems,
           });
         }
       }

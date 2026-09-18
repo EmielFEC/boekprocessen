@@ -156,6 +156,13 @@
     cursor: not-allowed;
     text-decoration: line-through;
   }
+  .slot.conflict {
+    border: 2px solid #c0392b;
+    background: #fdecea;
+    color: #c0392b;
+    cursor: pointer;
+  }
+  .slot.conflict:hover { background: #fbdbd7; }
 
   .activiteit-tegel.uitgeschakeld {
     cursor: not-allowed;
@@ -355,7 +362,7 @@
     if (mandje.items.length === 0) {
       html += '<p class="placeholder">Nog geen activiteiten toegevoegd.</p>';
     } else {
-      mandje.items.forEach((item) => {
+      chronologischeItems(mandje.items).forEach((item) => {
         const tijden = item.groepen
           .map((g) => (item.groepen.length > 1 ? `${g.aantal}p om ${tijdNotatie(g.begin)}` : tijdNotatie(g.begin)))
           .join(', ');
@@ -376,6 +383,23 @@
     el.innerHTML = html;
     el.querySelectorAll('.verwijder').forEach((btn) => {
       btn.addEventListener('click', () => verwijderItem(btn.dataset.item));
+    });
+  }
+
+  // Chronologische volgorde voor de zijbalk: vroegste starttijd eerst; als
+  // meerdere activiteiten op hetzelfde moment beginnen, staat de activiteit
+  // die het eerst afgelopen is bovenaan.
+  function vroegsteBegin(item) {
+    return Math.min(...item.groepen.map((g) => new Date(g.begin).getTime()));
+  }
+  function vroegsteEind(item) {
+    return Math.min(...item.groepen.map((g) => new Date(g.eind).getTime()));
+  }
+  function chronologischeItems(items) {
+    return [...items].sort((a, b) => {
+      const beginVerschil = vroegsteBegin(a) - vroegsteBegin(b);
+      if (beginVerschil !== 0) return beginVerschil;
+      return vroegsteEind(a) - vroegsteEind(b);
     });
   }
 
@@ -553,13 +577,27 @@
 
   function eenheidMeervoud(naam, aantal) {
     if (aantal === 1) return naam;
-    const meervoud = { baan: 'banen', tafel: 'tafels', sessie: "sessie's" };
+    const meervoud = { baan: 'banen', tafel: 'tafels', sessie: "sessie's", 'X-Cube': 'X-Cubes' };
     return meervoud[naam] || naam + 'en';
   }
 
-  // Bouwt de HTML voor een lijst tijd-slots. Niet-beschikbare tijden worden
-  // grijs en niet-klikbaar getoond (in plaats van weggelaten), zodat de
-  // klant ziet dat een activiteit die dag wel tijden heeft maar vol zit.
+  // Korte omschrijving van welke andere activiteit(en) een conflict-slot
+  // veroorzaken, voor gebruik in de hover-tooltip.
+  function conflictTooltip(overlapItems) {
+    return overlapItems
+      .map((o) => `${o.naam} (${o.aantal}p, ${tijdNotatie(o.begin)}-${tijdNotatie(o.eind)})`)
+      .join(', ');
+  }
+
+  // Bouwt de HTML voor een lijst tijd-slots. Niet-beschikbare (volgeboekte)
+  // tijden worden grijs en niet-klikbaar getoond (in plaats van weggelaten).
+  // Tijden die op zich beschikbaar zijn, maar overlappen met een andere
+  // activiteit in het mandje EN daardoor het totaal aantal personen op dat
+  // moment zouden overschrijden, worden rood omlijnd getoond ("conflict")
+  // met een tooltip - deze blijven wel klikbaar, maar het klikken opent dan
+  // de conflicterende activiteit in plaats van dit moment te kiezen (zie
+  // klikOpConflictSlot). Een legitieme gelijktijdige deelgroep-activiteit
+  // (samen niet meer dan de totale bezoekersgroep) triggert geen conflict.
   function renderSlotsHtml(opties) {
     const eenheidNaam = huidigProduct()?.eenheid_naam;
     return opties
@@ -567,10 +605,55 @@
         const eenhedenLabel = eenheidNaam && optie.eenhedenNodig
           ? ` (${optie.eenhedenNodig} ${eenheidMeervoud(eenheidNaam, optie.eenhedenNodig)})`
           : '';
-        const klasse = optie.beschikbaar === false ? 'slot disabled' : 'slot';
-        return `<div class="${klasse}" data-moment="${optie.startmoment}" data-beschikbaar="${optie.beschikbaar !== false}">${tijdNotatie(optie.startmoment)}${eenhedenLabel}</div>`;
+        const isConflict = optie.beschikbaar !== false && optie.conflict === true;
+        let klasse = 'slot';
+        if (optie.beschikbaar === false) klasse += ' disabled';
+        else if (isConflict) klasse += ' conflict';
+
+        const overlapItems = optie.overlapItems || [];
+        const titleAttr = isConflict
+          ? ` title="Overlapt met ${conflictTooltip(overlapItems).replace(/"/g, '&quot;')} - klik om die activiteit te verplaatsen"`
+          : '';
+        const overlapData = isConflict
+          ? ` data-overlap-items="${JSON.stringify(overlapItems).replace(/"/g, '&quot;')}"`
+          : '';
+
+        return `<div class="${klasse}" data-moment="${optie.startmoment}" data-beschikbaar="${optie.beschikbaar !== false}" data-conflict="${isConflict}"${titleAttr}${overlapData}>${tijdNotatie(optie.startmoment)}${eenhedenLabel}</div>`;
       })
       .join('');
+  }
+
+  // Klik op een rood-omlijnd conflict-slot: de klant kiest ervoor om de
+  // conflicterende activiteit(en) uit de planning te halen, waarna die
+  // activiteit direct geopend wordt zodat er een nieuwe tijd gekozen kan
+  // worden - in plaats van dit moment te selecteren voor de huidige
+  // activiteit.
+  async function klikOpConflictSlot(el) {
+    let overlapItems = [];
+    try {
+      overlapItems = JSON.parse(el.dataset.overlapItems || '[]');
+    } catch (err) {
+      overlapItems = [];
+    }
+    if (overlapItems.length === 0) return;
+
+    const namen = [...new Set(overlapItems.map((o) => o.naam))].join(', ');
+    const doorgaan = confirm(
+      `Dit tijdstip overlapt met ${namen} in je planning - samen zou dat de groepsgrootte overschrijden. ` +
+      `Wil je ${namen} uit je planning verwijderen om hier een nieuwe tijd voor te kiezen?`
+    );
+    if (!doorgaan) return;
+
+    const uniekeIds = [...new Set(overlapItems.map((o) => o.itemId))];
+    for (const id of uniekeIds) {
+      await fetch(`/api/mandje/${mandje.mandjeId}/items/${id}`, { method: 'DELETE' });
+    }
+    const opnieuw = await fetch(`/api/mandje/${mandje.mandjeId}`);
+    mandje = await opnieuw.json();
+    renderZijbalk();
+    renderActiviteitenKnop();
+
+    openActiviteit(overlapItems[0].slug);
   }
 
   function renderPlan(plan) {
@@ -594,7 +677,7 @@
 
     planResultaat.innerHTML = `<p class="hint">Kies een tijd:</p><div class="slots">${renderSlotsHtml(plan.opties)}</div><div id="cBevestigWrap"></div>`;
 
-    planResultaat.querySelectorAll('.slot[data-beschikbaar="true"]').forEach((el) => {
+    planResultaat.querySelectorAll('.slot[data-beschikbaar="true"][data-conflict="false"]').forEach((el) => {
       el.addEventListener('click', () => {
         planResultaat.querySelectorAll('.slot').forEach((s) => s.classList.remove('selected'));
         el.classList.add('selected');
@@ -603,6 +686,9 @@
           '<button id="cToevoegenBtn" type="button">Toevoegen aan planning</button>';
         document.getElementById('cToevoegenBtn').addEventListener('click', voegToeAanMandje);
       });
+    });
+    planResultaat.querySelectorAll('.slot.conflict').forEach((el) => {
+      el.addEventListener('click', () => klikOpConflictSlot(el));
     });
   }
 
@@ -614,8 +700,11 @@
       <div class="slots">${renderSlotsHtml(plan.opties)}</div>
     `;
 
-    planResultaat.querySelectorAll('.slot[data-beschikbaar="true"]').forEach((el) => {
+    planResultaat.querySelectorAll('.slot[data-beschikbaar="true"][data-conflict="false"]').forEach((el) => {
       el.addEventListener('click', () => haalVervolgSchemaOp(el.dataset.moment));
+    });
+    planResultaat.querySelectorAll('.slot.conflict').forEach((el) => {
+      el.addEventListener('click', () => klikOpConflictSlot(el));
     });
   }
 
@@ -684,7 +773,10 @@
         body: JSON.stringify({ slug: huidigeSlug, aantal: huidigDeelgroepAantal, groepen: gekozenGroepen }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Onbekende fout');
+      if (!res.ok) {
+        const detail = data.details ? ' - ' + JSON.stringify(data.details) : '';
+        throw new Error((data.error || 'Onbekende fout') + detail);
+      }
 
       mandje = data;
       renderZijbalk();
@@ -735,7 +827,10 @@
         return;
       }
 
-      if (!res.ok) throw new Error(data.error || 'Onbekende fout');
+      if (!res.ok) {
+        const detail = data.details ? ' - ' + JSON.stringify(data.details) : '';
+        throw new Error((data.error || 'Onbekende fout') + detail);
+      }
 
       renderBevestiging(data);
       localStorage.removeItem('mandjeId');

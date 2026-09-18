@@ -137,22 +137,44 @@ kunt lezen/testen zonder een echte API-verbinding.
    moment" (voor de vraag of een groep in 1 moment past) is daarna de
    hoogste personen-capaciteit die op de gekozen dag ergens gezien wordt.
 2. Past de groep in 1 moment? -> `status: 'enkel'`, kies een tijd.
-3. Past de groep niet in 1 moment? -> de groep wordt zo gelijk mogelijk
-   verdeeld over meerdere momenten; de klant kiest de starttijd van groep 1,
-   waarna `planVervolgSchema` het optimale (zo aansluitend mogelijke)
-   vervolgschema voor de rest berekent. Een tussenliggend vol moment wordt
-   overgeslagen (dus niet per se strak aaneengesloten); pas als er na de
-   gekozen starttijd geen ruimte meer over is voor alle subgroepen, krijgt de
-   klant een melding en kan die een andere starttijd voor groep 1 kiezen.
-4. **Overlap tussen activiteiten**: `filterOverlap()` sluit bij het plannen
-   van een nieuwe activiteit alle startmomenten uit die overlappen met iets
-   dat al in het mandje zit. **Vereenvoudiging**: dit geldt nu voor het hele
-   mandje, ook als een activiteit een "deelgroep" is. Met andere woorden: er
-   wordt van uitgegaan dat de hele bezoekersgroep steeds maar 1 activiteit
-   tegelijk doet, ook al doet officieel maar een deel van de groep die
-   activiteit. Echt parallel inplannen van verschillende subgroepen op
-   verschillende activiteiten tegelijk is bewust nog niet gebouwd (zie open
-   punten) - voor nu is dit dus "veiliger dan nodig" in plaats van fout.
+3. Past de groep niet in 1 moment? -> de groep wordt over meerdere momenten
+   verdeeld; de klant kiest de starttijd van groep 1, waarna
+   `planVervolgSchema` het optimale (zo aansluitend mogelijke) vervolgschema
+   voor de rest berekent. Een tussenliggend vol moment wordt overgeslagen
+   (dus niet per se strak aaneengesloten); pas als er na de gekozen
+   starttijd geen ruimte meer over is voor alle subgroepen, krijgt de klant
+   een melding en kan die een andere starttijd voor groep 1 kiezen. Er zijn
+   twee verdeelstrategieën, gekozen op basis van `per_eenheid_personen`:
+   - **Gelijk verdelen** (`verdeel()`) voor pure per-persoon-activiteiten
+     (Lasergame, American Golf): de groep wordt zo eerlijk mogelijk over de
+     benodigde momenten verdeeld (bijv. 22 -> 8+7+7).
+   - **Max-fill/greedy verdelen** (`verdeelGreedy()`) voor activiteiten die
+     per fysieke eenheid geboekt worden (Bowling, X-Cube, Fun Curling,
+     X-Wall): elk moment wordt zoveel mogelijk gevuld voordat er een nieuw
+     moment bij gepakt wordt (bijv. X-Cube, capaciteit 12 p. per moment: 18
+     -> [12, 6], 19 -> [12, 7]) - dit voorkomt dat een groep onnodig meer
+     eenheden (en dus meer banen/cubes) nodig heeft dan strikt nodig is.
+4. **Overlap tussen activiteiten**: `annoteerOverlap()` verwijdert GEEN
+   startmomenten meer uit de lijst - elk moment blijft zichtbaar en wordt
+   geannoteerd met hoeveel personen er dan al (via andere mandje-items)
+   elders bezig zijn (`overlapLast`/`overlapItems`). Pas als die
+   overlappende personen plus de nieuwe aanvraag de totale bezoekersgroep
+   zou overschrijden, is er een echt conflict (`heeftConflict()`,
+   `conflict: true` op de optie). Dit lost twee dingen tegelijk op:
+   - **Legitieme parallelle deelgroepen mogen wél tegelijk**: als een
+     deelgroep van bijv. 10 van de 20 Lasergame doet, kan de andere 10 op
+     hetzelfde moment een andere activiteit boeken (10 + 10 = 20, dus geen
+     conflict) - zonder dat er ooit meer dan de totale groep tegelijk "in
+     gebruik" is.
+   - **Echte conflicten worden getoond, niet verborgen**: in de UI worden
+     conflict-momenten rood omlijnd getoond met een tooltip die vermeldt
+     welke andere activiteit(en) het betreft; klikken op zo'n moment
+     verwijdert die conflicterende activiteit(en) uit het mandje en opent ze
+     meteen opnieuw, zodat de klant er een nieuwe tijd voor kan kiezen (zie
+     `klikOpConflictSlot()` in `public/index.html`). De server wijst een
+     conflicterende poging tot toevoegen/boeken ook hard af (409, met
+     `conflict: true` en `overlapItems`) als een race conditie de
+     UI-controle zou omzeilen.
 5. **Winkelmandje / "hold"**: Recras zelf heeft geen reserverings-mechanisme,
    dus er wordt geen plek écht vastgehouden zolang iemand aan het boeken is.
    In plaats daarvan:
@@ -203,7 +225,10 @@ kunt lezen/testen zonder een echte API-verbinding.
   i.p.v. 2 banen tegelijk te boeken) maar nog niet 1-op-1 bevestigd met de
   ruwe Recras-respons. Gebruik `GET /api/debug/beschikbaarheid/bowling?datum=...`
   (tijdelijke debug-route) om te controleren of het "beschikbaarheid"-getal
-  inderdaad rond het aantal banen ligt.
+  inderdaad rond het aantal banen ligt. **X-Cube** is nu ook op deze manier
+  geconfigureerd (`per_eenheid_personen: 6`, max. 2 cubes) - nog niet
+  live geverifieerd met echte data, gebruik dezelfde debug-route met
+  `x-cube-30`/`x-cube-60`.
 - **Fun Curling en X-Wall: per persoon of per baan/sessie afgerekend?**
   Voor Bowling is bevestigd dat dit per baan is (`prijs_type: 'per_eenheid'`
   in `products.json`). Voor Fun Curling en X-Wall staat dit nog op
@@ -219,10 +244,18 @@ kunt lezen/testen zonder een echte API-verbinding.
 - **Race conditions** zijn verkleind (herverificatie bij toevoegen én bij
   boeken) maar niet volledig uitgesloten tussen die twee momenten.
 - **Mixen van subgroepen over verschillende activiteiten** (een deel van de
-  groep bowlt, een deel doet lasergame, **tegelijkertijd**) is nog niet
-  gebouwd. Het datamodel (aparte `aantal` per mandje-item, `deelgroep`-vlag)
-  is er wel al op voorbereid; wat nog ontbreekt is dat de overlap-check per
-  subgroep in plaats van per hele bezoekersgroep gaat kijken.
+  groep bowlt, een deel doet lasergame, **tegelijkertijd**) werkt nu wel: de
+  overlap-check kijkt per moment naar de SOM van personen uit overlappende
+  mandje-items t.o.v. de totale bezoekersgroep (zie punt 4 hierboven), niet
+  meer naar "is er al iets, ja/nee". Nog niet gebouwd: een harde controle
+  dat dezelfde deelgroep niet zichzelf dubbel inplant op twee activiteiten
+  tegelijk (er wordt alleen op totaalaantallen gerekend, niet op wie precies
+  waar zit) - voor nu is dat de verantwoordelijkheid van de klant/het
+  overzicht in de zijbalk.
+- **X-Cube: max. 2 cubes** wordt niet apart afgedwongen in de code, maar
+  volgt automatisch uit wat Recras zelf als vrije eenheden teruggeeft op
+  `beschikbaarheid` (net als bij Bowling) - als Recras daar nooit meer dan 2
+  laat zien, kan de server ook nooit meer dan 2 cubes inplannen.
 - **Combideals en Activiteitendeals** staan als placeholder op de
   activiteitenpagina ("binnenkort beschikbaar") en doen nog niets.
 - **Dynamische prijzen** zijn nog niet meegenomen; de huidige live-prijs is
