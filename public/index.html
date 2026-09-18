@@ -8,14 +8,6 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-  /* Eigen huisstijl-lettertype, gebruikt voor de grote schermtitels. */
-  @font-face {
-    font-family: "Mascot MVB";
-    src: url("/fonts/MVB-Mascot.otf") format("opentype");
-    font-weight: normal;
-    font-style: normal;
-    font-display: swap;
-  }
   :root {
     /* FEC Sevenum huisstijl - paars nu als dominante kleur (zie voorbeeldscherm) */
     --paars: #2c1d49;
@@ -29,9 +21,6 @@
     --tekst: var(--beige);
     --tekst-gedimd: #c6b9de;
     --border: rgba(255, 255, 255, 0.12);
-    /* Alleen voor de grote schermtitels (h1 / h2.schermtitel) - alle overige
-       tekst gebruikt gewoon Rubik (evt. in het oranje). */
-    --font-display: "Mascot MVB", "Rubik", cursive;
   }
   * { box-sizing: border-box; }
   body {
@@ -42,24 +31,29 @@
     padding: 24px 16px 60px;
   }
   h1 {
-    font-family: var(--font-display);
-    font-size: 2.6rem;
+    font-family: "Rubik", sans-serif;
+    font-size: 2.3rem;
     line-height: 1.15;
     margin: 0 0 4px;
     color: #fff;
     text-shadow: 2px 2px 0 var(--oranje);
-    font-weight: 700;
+    font-weight: 800;
   }
   h2.schermtitel {
-    font-family: var(--font-display);
-    font-size: 1.9rem;
+    font-family: "Rubik", sans-serif;
+    font-size: 1.6rem;
     line-height: 1.15;
     margin: 0 0 6px;
     color: #fff;
     text-shadow: 2px 2px 0 var(--oranje);
-    font-weight: 700;
+    font-weight: 800;
   }
   p.subtitle { color: var(--tekst-gedimd); margin-top: 0; margin-bottom: 24px; }
+
+  /* Titel staat BUITEN .layout (i.p.v. bovenin .hoofd), zodat .hoofd en
+     .zijbalk allebei op dezelfde hoogte beginnen en de zijbalk gelijk
+     uitlijnt met de bovenkant van het andere paarse blok. */
+  .pagina-header { max-width: 960px; margin: 0 auto; }
 
   .layout {
     max-width: 960px;
@@ -140,6 +134,19 @@
   button:disabled { opacity: 0.5; cursor: not-allowed; }
   button.secundair { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
   button.tekstlink { background: none; color: var(--oranje); text-decoration: underline; padding: 0; margin: 12px 0 0; font-size: 0.85rem; font-weight: 400; }
+  button.knop-terug {
+    display: inline-block;
+    background: var(--accent);
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    margin: 0 0 20px;
+  }
+  button.knop-terug:hover { opacity: 0.9; }
 
   .scherm[hidden] { display: none; }
 
@@ -246,6 +253,7 @@
     transform: translateX(-50%);
     background: var(--paars-kaart-licht);
     color: var(--tekst);
+    border: 2px solid var(--oranje);
     padding: 8px 12px;
     border-radius: 8px;
     font-size: 0.78rem;
@@ -265,7 +273,7 @@
     left: 50%;
     transform: translateX(-50%);
     border: 6px solid transparent;
-    border-top-color: var(--paars-kaart-licht);
+    border-top-color: var(--oranje);
     z-index: 30;
     pointer-events: none;
   }
@@ -388,14 +396,26 @@
   #resultaat.ok { background: rgba(78, 201, 155, 0.15); border: 1px solid #4ec99b; }
   #resultaat.fout { background: rgba(255, 107, 107, 0.15); border: 1px solid #ff6b6b; }
   .hint { font-size: 0.85rem; color: var(--tekst-gedimd); margin-top: 6px; }
-  .foutmelding { font-size: 0.9rem; color: #ff8a8a; margin-top: 8px; }
+  .foutmelding {
+    font-size: 0.92rem;
+    font-weight: 600;
+    color: #fff;
+    background: rgba(243, 147, 19, 0.18);
+    border: 1px solid var(--oranje);
+    border-left: 4px solid var(--oranje);
+    border-radius: 8px;
+    padding: 10px 14px;
+    margin-top: 10px;
+  }
 </style>
 </head>
 <body>
+  <div class="pagina-header">
+    <h1>Boek je bezoek</h1>
+    <p class="subtitle">Prototype boekproces dat rechtstreeks tegen de Recras API praat.</p>
+  </div>
   <div class="layout">
     <div class="hoofd">
-      <h1>Boek je bezoek</h1>
-      <p class="subtitle">Prototype boekproces dat rechtstreeks tegen de Recras API praat.</p>
 
       <!-- SCHERM A: aantal personen + datum voor het hele bezoek -->
       <section id="schermA" class="scherm kaart">
@@ -442,7 +462,7 @@
 
       <!-- SCHERM C: 1 activiteit boeken -->
       <section id="schermC" class="scherm kaart" hidden>
-        <button class="tekstlink" id="cTerugBtn" type="button">&larr; Terug naar activiteiten</button>
+        <button class="knop-terug" id="cTerugBtn" type="button">&larr; Terug naar activiteiten</button>
         <h2 class="schermtitel" id="cTitel"></h2>
 
         <div class="deelgroep-blok" id="cDeelgroepBlok" hidden>
@@ -461,7 +481,7 @@
 
       <!-- SCHERM D: klantgegevens -->
       <section id="schermD" class="scherm kaart" hidden>
-        <button class="tekstlink" id="dTerugBtn" type="button">&larr; Terug naar activiteiten</button>
+        <button class="knop-terug" id="dTerugBtn" type="button">&larr; Terug naar activiteiten</button>
         <h2 class="schermtitel">Jouw gegevens</h2>
 
         <label for="voornaam">Voornaam</label>
@@ -515,6 +535,11 @@
   let gekozenGroepen = null;
   let laatsteKiesStarttijdPlan = null;
   let huidigDeelgroepAantal = null;
+  // Als een conflict is opgelost door een activiteit te verwijderen, staat
+  // hier welke activiteit (slug) na het toevoegen van de nieuwe tijd direct
+  // geopend moet worden, zodat de klant er meteen een nieuwe tijd voor kan
+  // kiezen (zie klikOpConflictSlot()/voegToeAanMandje()).
+  let pendingOpenSlugNaToevoegen = null;
 
   const schermen = ['schermA', 'schermB', 'schermC', 'schermD', 'schermE'];
   function toonScherm(id) {
@@ -1060,14 +1085,17 @@
   }
 
   // Klik op een rood-omlijnd conflict-slot: de klant kiest ervoor om de
-  // conflicterende activiteit(en) uit de planning te halen, waarna DIT
-  // moment (waar de klant op klikte) alsnog voor de HUIDIGE activiteit
-  // gekozen/toegevoegd wordt - in plaats van de klant naar de verwijderde
-  // activiteit toe te sturen om die opnieuw in te plannen (waardoor de
-  // oorspronkelijk gekozen activiteit/tijd verloren ging).
+  // conflicterende activiteit(en) uit de planning te halen. Daarna gebeurt
+  // ALLEBEI: (1) DIT moment (waar de klant op klikte) wordt voor de HUIDIGE
+  // activiteit toegevoegd aan de planning, en (2) de klant wordt meteen
+  // doorgestuurd naar de VERWIJDERDE activiteit, zodat die er direct een
+  // nieuwe tijd voor kan kiezen - zie de `pendingOpenSlugNaToevoegen`-
+  // afhandeling in voegToeAanMandje().
   // `modus`: 'enkel' (1 moment volstaat, meteen toevoegen) of 'kiesStart'
   // (dit is de starttijd van de eerste subgroep bij een gesplitste boeking -
-  // ga verder met het vervolgschema, net als bij een normale klik).
+  // ga verder met het vervolgschema, net als bij een normale klik; de
+  // doorschakeling naar de verwijderde activiteit gebeurt dan pas zodra de
+  // klant dat vervolgschema zelf bevestigt).
   async function klikOpConflictSlot(el, modus) {
     let overlapItems = [];
     try {
@@ -1092,6 +1120,10 @@
     mandje = await opnieuw.json();
     renderZijbalk();
     renderActiviteitenKnop();
+
+    // Zodra de nieuwe activiteit/tijd hieronder is toegevoegd, meteen
+    // doorschakelen naar de VERWIJDERDE activiteit (zie voegToeAanMandje()).
+    pendingOpenSlugNaToevoegen = overlapItems[0].slug;
 
     const gekozenMoment = el.dataset.moment;
     if (modus === 'kiesStart') {
@@ -1227,8 +1259,19 @@
       mandje = data;
       renderZijbalk();
       renderActiviteitenKnop();
-      toonScherm('schermB');
+
+      // Kwam deze toevoeging voort uit het oplossen van een conflict? Dan
+      // meteen doorschakelen naar de VERWIJDERDE activiteit, zodat de klant
+      // er direct een nieuwe tijd voor kan kiezen (zie klikOpConflictSlot()).
+      if (pendingOpenSlugNaToevoegen) {
+        const slugTeOpenen = pendingOpenSlugNaToevoegen;
+        pendingOpenSlugNaToevoegen = null;
+        openActiviteit(slugTeOpenen);
+      } else {
+        toonScherm('schermB');
+      }
     } catch (err) {
+      pendingOpenSlugNaToevoegen = null;
       planResultaat.innerHTML += `<p class="foutmelding">Kon niet toevoegen: ${err.message}</p>`;
     }
   }

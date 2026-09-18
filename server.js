@@ -141,6 +141,40 @@ function bezetteItemsInfo(mandje, exclusiefItemId) {
 // overlapItems). Filtert NIETS weg - alle momenten blijven staan, ook
 // volgeboekte of conflicterende, zodat de UI ze greyed-out/rood kan tonen
 // in plaats van te laten verdwijnen.
+// Eén Recras-startmoment kan MEERDERE 'locaties' (resources) tegelijk
+// aanbieden (zie https://demo.recras.nl/docs/api/endpoints/producten_beschikbaarheid.html):
+// een entry met `locatie_id: null` betekent "kan OOK zonder locatie geboekt
+// worden" en is geen extra fysieke capaciteit; entries met een echte
+// `locatie_id` zijn de daadwerkelijke resources (bijv. de banen-pool) en hun
+// `beschikbaarheid` telt op. We gebruikten hiervoor eerder altijd blindweg
+// `locaties[0]` - dat kan de VERKEERDE entry zijn als de null-locatie eerst
+// in de lijst staat (bijv. mogelijk de verklaring voor de gemelde X-Cube-bug
+// waarbij Recras 3 vrije eenheden leek te tonen terwijl er maar 2 zijn).
+// Voor het daadwerkelijk BOEKEN hebben we bovendien de specifieke
+// `locatie_id` nodig van de resource die we innemen: sommige producten
+// (bijv. Lasergame) vereisen dit verplicht bij Recras
+// (`ERR_PRODUCT_REQUIRES_LOCATION` als het ontbreekt).
+function samenvattenLocaties(locaties) {
+  const lijst = Array.isArray(locaties) ? locaties : [];
+  const echte = lijst.filter((l) => l && l.locatie_id != null);
+  if (echte.length > 0) {
+    const beschikbaarheid = echte.reduce((som, l) => som + (l.beschikbaarheid || 0), 0);
+    const metRuimte = echte.find((l) => (l.beschikbaarheid || 0) > 0) || echte[0];
+    return { beschikbaarheid, locatieId: metRuimte.locatie_id };
+  }
+  // Geen locatie-gebonden entries - dit product kan (of moet) zonder
+  // locatie geboekt worden; gebruik de eerste (meestal enige) entry.
+  const eerste = lijst[0];
+  return { beschikbaarheid: eerste?.beschikbaarheid ?? 0, locatieId: eerste?.locatie_id ?? null };
+}
+
+// Voegt de samengevatte `beschikbaarheid`/`locatieId` als vlakke velden toe
+// aan elk moment, zodat de rest van de code (hieronder en planning.js) niet
+// meer zelf in `locaties` hoeft te graven.
+function normaliseerMomenten(momenten) {
+  return (momenten || []).map((m) => ({ ...m, ...samenvattenLocaties(m.locaties) }));
+}
+
 // Sommige producten hebben een fysieke bovengrens aan hoeveel eenheden er
 // TEGELIJK (op 1 moment) ingezet kunnen worden (bijv. X-Cube: max. 2
 // tegelijk), die niet altijd blijkt te kloppen met wat Recras' eigen
@@ -150,17 +184,17 @@ function bezetteItemsInfo(mandje, exclusiefItemId) {
 // de juiste, gecorrigeerde eenheden rekent.
 function begrensEenheden(momenten, maxEenhedenPerMoment) {
   if (maxEenhedenPerMoment == null) return momenten;
-  return (momenten || []).map((m) => {
-    if (!m.locaties || !m.locaties[0]) return m;
-    const beperkt = Math.min(m.locaties[0].beschikbaarheid ?? 0, maxEenhedenPerMoment);
-    return { ...m, locaties: [{ ...m.locaties[0], beschikbaarheid: beperkt }, ...m.locaties.slice(1)] };
-  });
+  return (momenten || []).map((m) => ({
+    ...m,
+    beschikbaarheid: Math.min(m.beschikbaarheid ?? 0, maxEenhedenPerMoment),
+  }));
 }
 
 async function haalMomentenMetOverlapInfo(product, datum, mandje, exclusiefItemId) {
   const { begin, eind } = dagBereik(datum);
   const ruweMomenten = await recras.getBeschikbaarheid(product.product_id, begin, eind);
-  const begrensdeMomenten = begrensEenheden(ruweMomenten, product.max_eenheden_per_moment);
+  const genormaliseerdeMomenten = normaliseerMomenten(ruweMomenten);
+  const begrensdeMomenten = begrensEenheden(genormaliseerdeMomenten, product.max_eenheden_per_moment);
   const bezet = bezetteItemsInfo(mandje, exclusiefItemId);
   return annoteerOverlap(begrensdeMomenten, product.duur_minuten, bezet);
 }
@@ -169,7 +203,7 @@ async function haalMomentenMetOverlapInfo(product, datum, mandje, exclusiefItemI
 // > 1) gaan we ervan uit dat Recras 'beschikbaarheid' als aantal vrije EENHEDEN
 // (banen) teruggeeft, dus vermenigvuldigen we hiermee (zie planning.js/README).
 function personenCapaciteitVoorMoment(moment, product) {
-  const eenheden = moment?.locaties?.[0]?.beschikbaarheid ?? 0;
+  const eenheden = moment?.beschikbaarheid ?? 0;
   return eenheden * (product.per_eenheid_personen || 1);
 }
 
@@ -243,47 +277,40 @@ app.get('/api/producten', async (req, res) => {
 // klant een dag te laten kiezen die toch nergens iets oplevert.
 // `vanaf`/`tot` volgen dezelfde "tot exclusief" regel als elders (tot = de
 // dag ná de laatst gewenste dag).
+//
+// PRESTATIE: dit vroeg eerder de beschikbaarheid van ALLE actieve producten
+// apart op (7-8 losse Recras-aanvragen per maand), wat het laden van een
+// nieuwe maand merkbaar traag maakte. Op advies van Emiel gebruiken we nu
+// alleen Bowling als referentie-activiteit: Bowling is namelijk altijd open
+// zodra FEC open is, dus "heeft Bowling die dag ÜBERHAUPT startmomenten"
+// (ongeacht of Bowling zelf nog vrije banen heeft) is al een prima proxy
+// voor "is deze dag open" - en dat is 1 aanvraag i.p.v. 7-8.
 app.get('/api/dagen-beschikbaarheid', async (req, res) => {
   const { vanaf, tot } = req.query;
   if (!vanaf || !tot) {
     return res.status(400).json({ error: 'Query parameters "vanaf" en "tot" (YYYY-MM-DD) zijn verplicht' });
   }
 
-  const actieveProducten = Object.entries(products).filter(
-    ([slug, p]) => !slug.startsWith('_') && p.actief && p.product_id
-  );
-
-  const dagenMetCapaciteit = new Set();
-  let aantalMislukt = 0;
-
-  await Promise.all(
-    actieveProducten.map(async ([slug, p]) => {
-      try {
-        const momenten = await recras.getBeschikbaarheid(p.product_id, vanaf, tot);
-        (momenten || []).forEach((m) => {
-          const eenheden = m?.locaties?.[0]?.beschikbaarheid ?? 0;
-          if (eenheden > 0 && m.startmoment) {
-            dagenMetCapaciteit.add(m.startmoment.slice(0, 10));
-          }
-        });
-      } catch (err) {
-        aantalMislukt += 1;
-        console.error(`[dagen-beschikbaarheid] ${slug}:`, err.message, err.details ?? '');
-      }
-    })
-  );
-
-  // Als het ophalen voor ALLE actieve producten mislukte (bijv. Recras
-  // tijdelijk niet bereikbaar), geven we een fout terug i.p.v. een lege set:
-  // een lege set zou de frontend laten denken dat ELKE dag in dit bereik
-  // geen enkele capaciteit heeft (dus alles grijs), terwijl we dat in
-  // werkelijkheid gewoon niet konden vaststellen. De frontend valt bij een
-  // fout "fail-open" terug (geen dagen grijzen) i.p.v. onterecht te blokkeren.
-  if (actieveProducten.length > 0 && aantalMislukt === actieveProducten.length) {
-    return res.status(502).json({ error: 'Kon beschikbaarheid niet ophalen bij Recras' });
+  const referentieProduct = getProduct('bowling');
+  if (!referentieProduct) {
+    return res.status(500).json({ error: 'Referentie-activiteit "bowling" ontbreekt in products.json' });
   }
 
-  res.json({ dagenMetCapaciteit: [...dagenMetCapaciteit].sort() });
+  try {
+    const momenten = await recras.getBeschikbaarheid(referentieProduct.product_id, vanaf, tot);
+    const dagenOpen = new Set();
+    (momenten || []).forEach((m) => {
+      if (m.startmoment) dagenOpen.add(m.startmoment.slice(0, 10));
+    });
+    res.json({ dagenMetCapaciteit: [...dagenOpen].sort() });
+  } catch (err) {
+    console.error('[dagen-beschikbaarheid]', err.message, err.details ?? '');
+    // Fout teruggeven i.p.v. een lege lijst: een lege lijst zou de frontend
+    // laten denken dat ELKE dag in dit bereik dicht is, terwijl we dat in
+    // werkelijkheid niet konden vaststellen. De frontend valt bij een fout
+    // "fail-open" terug (geen dagen grijzen) i.p.v. onterecht te blokkeren.
+    res.status(502).json({ error: 'Kon beschikbaarheid niet ophalen bij Recras' });
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -495,12 +522,21 @@ app.post('/api/mandje/:mandjeId/toevoegen', async (req, res) => {
       // Boeking mag doorgaan zonder prijsindicatie; het echte bedrag volgt uit Recras.
     }
 
-    const groepenMetEind = genormaliseerdeGroepen.map((g) => ({
-      aantal: g.aantal,
-      begin: g.begin,
-      eind: recras.berekenEind(g.begin, product.duur_minuten),
-      eenhedenNodig: berekenBenodigdeEenheden(g.aantal, product.per_eenheid_personen),
-    }));
+    const groepenMetEind = genormaliseerdeGroepen.map((g) => {
+      const gevonden = momenten.find((m) => m.startmoment === g.begin);
+      return {
+        aantal: g.aantal,
+        begin: g.begin,
+        eind: recras.berekenEind(g.begin, product.duur_minuten),
+        eenhedenNodig: berekenBenodigdeEenheden(g.aantal, product.per_eenheid_personen),
+        // Specifieke resource (bijv. welke banen-pool) die dit moment
+        // aanbiedt - nodig bij het daadwerkelijk boeken, zie
+        // /api/mandje/:mandjeId/boeken hieronder. Wordt daar vlak voor het
+        // boeken nog een keer ververst, voor het geval de beschikbaarheid
+        // ondertussen gewijzigd is.
+        locatieId: gevonden?.locatieId ?? null,
+      };
+    });
 
     const item = {
       id: crypto.randomUUID(),
@@ -553,7 +589,7 @@ app.post('/api/mandje/:mandjeId/boeken', async (req, res) => {
     return res.status(400).json({ error: 'Het mandje is leeg' });
   }
 
-  const { klant, bijzonderheden } = req.body || {};
+  const { klant } = req.body || {};
   if (!klant || !klant.email || !klant.achternaam) {
     return res.status(400).json({ error: 'Verplichte klantvelden ontbreken: voornaam, achternaam, email' });
   }
@@ -582,6 +618,9 @@ app.post('/api/mandje/:mandjeId/boeken', async (req, res) => {
             overlapItems: gevonden.overlapItems,
           });
         }
+        // Locatie (resource) vlak voor het boeken verversen, voor het geval
+        // deze sinds het toevoegen aan het mandje gewijzigd is.
+        groep.locatieId = gevonden.locatieId ?? null;
       }
     } catch (err) {
       console.error(err);
@@ -593,34 +632,27 @@ app.post('/api/mandje/:mandjeId/boeken', async (req, res) => {
   const regels = [];
   for (const item of mandje.items) {
     const product = getProduct(item.slug);
-    const meerdereGroepen = item.groepen.length > 1;
-    item.groepen.forEach((groep, i) => {
-      const delen = [];
-      if (meerdereGroepen) delen.push(`subgroep ${i + 1} van ${item.groepen.length}`);
-      if (item.deelgroep) delen.push(`deel van de groep: ${item.aantal} van ${mandje.aantal}`);
+    item.groepen.forEach((groep) => {
       regels.push({
         product_id: product.product_id,
         begin: groep.begin,
-        duur_minuten: product.duur_minuten,
         aantal: groep.aantal,
-        opmerking: `${item.naam}${delen.length ? ' (' + delen.join(', ') + ')' : ''}`,
+        locatie_id: groep.locatieId ?? null,
       });
     });
   }
 
   try {
-    const { klant: klantData, nieuweKlant } = await recras.vindOfMaakKlant(klant);
-    const boeking = await recras.maakCombinatieBoeking({
-      klant_id: klantData.id,
-      regels,
-      status: 'definitief',
-      bijzonderheden,
-    });
+    const boeking = await recras.maakCombinatieBoeking({ klant, regels, status: 'definitief' });
 
     // Mandje leegmaken na succesvolle boeking.
     mandjes.delete(req.params.mandjeId);
 
-    res.status(201).json({ boeking, klant: klantData, nieuweKlant });
+    // `klant` (zoals de klant het zelf invulde) wordt teruggegeven voor de
+    // bevestigingspagina - `POST /book_products` geeft zelf geen
+    // klantgegevens terug (het matcht/maakt de klant intern), dus we tonen
+    // gewoon wat de klant net heeft ingevoerd i.p.v. iets van Recras.
+    res.status(201).json({ boeking, klant });
   } catch (err) {
     console.error(err);
     res.status(err.status || 500).json({ error: 'Kon boeking niet aanmaken', details: err.details });

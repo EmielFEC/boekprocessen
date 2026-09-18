@@ -121,9 +121,15 @@ function annoteerOverlap(momenten, duurMinuten, bezetteItems) {
 }
 
 /**
- * Zet de ruwe (mogelijk met annoteerOverlap geannoteerde) beschikbaarheids-
- * data om naar een lijst van { startmoment, eenhedenBeschikbaar,
- * personenCapaciteit, overlapLast, overlapItems }.
+ * Zet de ruwe (door server.js genormaliseerde en met annoteerOverlap
+ * geannoteerde) beschikbaarheidsdata om naar een lijst van { startmoment,
+ * locatieId, eenhedenBeschikbaar, personenCapaciteit, overlapLast,
+ * overlapItems }.
+ *
+ * Verwacht dat elk moment al een vlak `beschikbaarheid`-veld heeft (zie
+ * server.js: samenvattenLocaties()/normaliseerMomenten()) - dat is de
+ * (opgetelde) beschikbaarheid over de echte, locatie-gebonden resources van
+ * dit moment, niet zomaar `locaties[0]`.
  *
  * BELANGRIJKE AANNAME: bij producten die per baan/tafel/sessie/cube
  * geboekt worden (per_eenheid_personen > 1, bijv. Bowling: 7 p.p. baan),
@@ -136,9 +142,10 @@ function annoteerOverlap(momenten, duurMinuten, bezetteItems) {
 function leesMomenten(momenten, perEenheidPersonen = 1) {
   const perEenheid = perEenheidPersonen && perEenheidPersonen > 0 ? perEenheidPersonen : 1;
   const beschikbaarheidPerMoment = (momenten || []).map((m) => {
-    const eenhedenBeschikbaar = m.locaties?.[0]?.beschikbaarheid ?? 0;
+    const eenhedenBeschikbaar = m.beschikbaarheid ?? 0;
     return {
       startmoment: m.startmoment,
+      locatieId: m.locatieId ?? null,
       eenhedenBeschikbaar,
       personenCapaciteit: eenhedenBeschikbaar * perEenheid,
       overlapLast: m.overlapLast || 0,

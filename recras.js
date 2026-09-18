@@ -5,9 +5,6 @@ const fetch = require('node-fetch');
 
 const RECRAS_HOST = process.env.RECRAS_HOST;
 const RECRAS_TOKEN = process.env.RECRAS_TOKEN;
-const RECRAS_BEDRIJF_ID = process.env.RECRAS_BEDRIJF_ID
-  ? parseInt(process.env.RECRAS_BEDRIJF_ID, 10)
-  : undefined;
 
 if (!RECRAS_HOST || !RECRAS_TOKEN) {
   console.warn(
@@ -166,38 +163,9 @@ async function listRecenteBoekingen(limit = 5) {
 }
 
 /**
- * Zoekt of maakt een klant aan. Recras doet de deduplicatie zelf: als naam +
- * e-mailadres van de contactpersoon al bestaan, geeft de API een 200 terug
- * met de bestaande klant; anders een 201 met een nieuwe klant. Wij hoeven
- * dus niet zelf te zoeken, alleen het resultaat door te geven.
- */
-async function vindOfMaakKlant({ naam, voornaam, achternaam, email, telefoon }) {
-  const payload = {
-    naam: naam || `${voornaam} ${achternaam}`.trim(),
-    contactpersonen: [
-      {
-        voornaam,
-        achternaam,
-        email1: email,
-        telefoon1: telefoon || '',
-        hoofdcontact: true,
-      },
-    ],
-  };
-
-  if (RECRAS_BEDRIJF_ID) payload.bedrijf_id = RECRAS_BEDRIJF_ID;
-
-  const { status, data } = await recrasRequest('/klanten', {
-    method: 'POST',
-    body: payload,
-  });
-
-  return { klant: data, nieuweKlant: status === 201 };
-}
-
-/**
  * Telt `duur_minuten` op bij een ISO-tijdstip om het eindtijdstip van een
- * boekingsregel te berekenen.
+ * (sub)groep te berekenen - puur voor WEERGAVE in ons eigen mandje/zijbalk,
+ * niet meer voor de boeking-aanmaak zelf (zie maakCombinatieBoeking).
  */
 function berekenEind(beginIso, duurMinuten) {
   const d = new Date(beginIso);
@@ -205,83 +173,97 @@ function berekenEind(beginIso, duurMinuten) {
   return d.toISOString();
 }
 
+// Zet een ISO8601-tijdstip-MET-offset (zoals Recras' eigen 'startmoment',
+// bijv. "2026-10-01T14:00:00+02:00") om naar het "YYYY-MM-DD HH:mm:ss"-
+// formaat (spatie, geen offset) dat Recras' eigen documentatie-voorbeelden
+// voor datetime-velden gebruiken (zie book_products/startmomenten). Dit
+// gebeurt met een simpele regex-extractie i.p.v. via een JS Date-object -
+// een Date zou de klok-tijd omrekenen naar de tijdzone van de SERVER (op
+// Render bijv. UTC), terwijl we exact het wandklok-tijdstip willen behouden
+// dat de klant koos (en dat al in de Nederlandse tijdzone stond).
+function formatteerVoorRecras(isoTijdstipMetOffset) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/.exec(isoTijdstipMetOffset || '');
+  if (!match) return isoTijdstipMetOffset;
+  const [, jaar, maand, dag, uur, minuut, seconde] = match;
+  return `${jaar}-${maand}-${dag} ${uur}:${minuut}:${seconde}`;
+}
+
+// Volgt een HATEOAS-link zoals Recras die teruggeeft in `_links`
+// (bijv. { href: "/api2/boekingen/51/set_status/definitief", method: "POST" }).
+// `recrasRequest()` plakt zelf al BASE_URL (".../api2") ervoor, dus een
+// eventueel "/api2"-voorvoegsel in de href wordt hier eerst gestript.
+async function volgLink(link) {
+  if (!link || !link.href) return null;
+  const pad = link.href.startsWith('/api2') ? link.href.slice('/api2'.length) : link.href;
+  return recrasRequest(pad, { method: link.method || 'POST' });
+}
+
 /**
- * Maakt EEN boeking aan met een of meerdere boekingsregels, eventueel voor
- * VERSCHILLENDE producten (bijv. Bowling om 14:00 + Lasergame om 15:00 in
- * dezelfde boeking, of één product gesplitst over meerdere subgroepen/tijden).
+ * Maakt in ÉÉN keer een boeking aan met (mogelijk meerdere) producten,
+ * eventueel voor VERSCHILLENDE producten (bijv. Bowling om 14:00 + Lasergame
+ * om 15:00 in dezelfde boeking, of één product gesplitst over meerdere
+ * subgroepen/tijden), via `POST /book_products`
+ * (https://demo.recras.nl/docs/api/endpoints/book_products.html) - een
+ * endpoint dat specifiek voor dit scenario bedoeld is (combi-boekingen met
+ * meerdere producten in 1x) en zelf het klant-matchen en de locatie-
+ * toewijzing regelt.
  *
- * Werkwijze (in 2 stappen, want de create-endpoint van Recras kan maar 1
- * boekingsregel tegelijk aanmaken):
- *  1. POST /boekingen met de eerste regel -> dit levert de boeking én zijn
- *     eerste (automatisch aangemaakte) boekingsregel op.
- *  2. PUT /boekingen/{id} om die eerste regel te corrigeren naar de juiste
- *     product/aantal/tijd, en de overige regels toe te voegen. Volgens de
- *     Recras-documentatie hoeft bij het toevoegen van een nieuwe
- *     boekingsregel geen bijbehorende kostenregel meegestuurd te worden
- *     ("this happens automatically") - we sturen de bestaande
- *     kosten-structuur dus ongewijzigd terug, puur omdat `boekingsregels` en
- *     `kosten` samen meegestuurd moeten worden.
+ * LET OP: dit vervangt een eerdere aanpak via losse POST+PUT op
+ * `/boekingen`, die op live data 2 harde fouten gaf: `ERR_PRODUCT_
+ * REQUIRES_LOCATION` (sommige producten, zoals Lasergame, vereisen een
+ * `locatie_id` per regel - vandaar dat `regels[].locatie_id` hieronder
+ * meegestuurd wordt, afkomstig uit de 'locaties' van de beschikbaarheids-
+ * data, zie server.js) en een verplicht maar ontbrekend `ref`-veld op
+ * nieuwe boekingsregels. Bij `/book_products` bestaan beide problemen niet:
+ * `location_id` is een normaal (optioneel) veld per product-regel, en er is
+ * geen `ref`-vereiste voor nieuwe regels.
  *
- * `regels`: [{ product_id, begin, duur_minuten, aantal, opmerking }, ...]
- *           (minstens 1 entry)
+ * `regels`: [{ product_id, begin (ISO-tijdstip met offset), aantal,
+ *              locatie_id? }, ...] (minstens 1 entry)
+ * `klant`: { voornaam, achternaam, email, telefoon? }
  */
-async function maakCombinatieBoeking({
-  klant_id,
-  regels,
-  status = 'definitief',
-  bijzonderheden,
-}) {
+async function maakCombinatieBoeking({ klant, regels, status = 'definitief' }) {
   if (!Array.isArray(regels) || regels.length === 0) {
     throw new Error('maakCombinatieBoeking heeft minstens 1 regel nodig');
   }
 
-  const totaalAantal = regels.reduce((som, r) => som + r.aantal, 0);
-  const eersteRegelInput = regels[0];
-
-  const createPayload = {
-    klant_id,
-    begin: eersteRegelInput.begin,
-    personen: totaalAantal,
-    product_id: eersteRegelInput.product_id,
+  const payload = {
     status,
+    customer: {
+      email: klant.email,
+      first_name: klant.voornaam,
+      last_name: klant.achternaam,
+      ...(klant.telefoon ? { phone_number: klant.telefoon } : {}),
+    },
+    products: regels.map((regel) => ({
+      amount: regel.aantal,
+      product_id: regel.product_id,
+      datetime: formatteerVoorRecras(regel.begin),
+      ...(regel.locatie_id != null ? { location_id: regel.locatie_id } : {}),
+    })),
+    should_invoice: true,
   };
-  if (bijzonderheden) createPayload.bijzonderheden = bijzonderheden;
 
-  const { data: boeking } = await recrasRequest('/boekingen', {
+  const { data: boeking } = await recrasRequest('/book_products', {
     method: 'POST',
-    body: createPayload,
+    body: payload,
   });
 
-  const eersteBoekingsregel = boeking.boekingsregels?.[0];
-  if (!eersteBoekingsregel) {
-    throw new Error(
-      'Onverwacht: Recras gaf geen boekingsregel terug bij het aanmaken van de boeking'
-    );
+  // Voor de zekerheid: als Recras een 'bevestigen'-link teruggeeft en we een
+  // definitieve boeking willen, roepen we die ook aan - de documentatie is
+  // er niet expliciet over of `status: 'definitief'` in de aanmaak zelf al
+  // genoeg is. Dit is niet-blokkerend: als het niet lukt, is de boeking
+  // zelf al wel aangemaakt.
+  const bevestigLink = boeking?._links?.['recras:booking:set_status:confirmed'];
+  if (status === 'definitief' && bevestigLink?.href) {
+    try {
+      await volgLink(bevestigLink);
+    } catch (err) {
+      console.error('[boeking] kon status niet expliciet bevestigen:', err.message, err.details ?? '');
+    }
   }
 
-  const nieuweBoekingsregels = regels.map((regel, i) => {
-    const basis = {
-      product_id: regel.product_id,
-      aantal: regel.aantal,
-      begin: regel.begin,
-      eind: berekenEind(regel.begin, regel.duur_minuten),
-      opmerking: regel.opmerking || undefined,
-    };
-    // De eerste regel hergebruikt de al bestaande boekingsregel (met id),
-    // de rest zijn nieuwe regels (zonder id).
-    return i === 0 ? { id: eersteBoekingsregel.id, ...basis } : basis;
-  });
-
-  const { data: bijgewerkteBoeking } = await recrasRequest(`/boekingen/${boeking.id}`, {
-    method: 'PUT',
-    body: {
-      id: boeking.id,
-      boekingsregels: nieuweBoekingsregels,
-      kosten: boeking.kosten,
-    },
-  });
-
-  return bijgewerkteBoeking;
+  return boeking;
 }
 
 module.exports = {
@@ -290,7 +272,6 @@ module.exports = {
   haalPrijsPerPersoon,
   haalAfbeeldingUrl,
   listRecenteBoekingen,
-  vindOfMaakKlant,
   maakCombinatieBoeking,
   berekenEind,
 };

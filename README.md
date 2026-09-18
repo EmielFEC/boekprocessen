@@ -39,11 +39,12 @@ winkelmandje, en ronden af met één Recras-boeking voor het hele bezoek.
 5. De klant kan een volgende activiteit toevoegen (die dan geen tijden meer
    toont die al bezet zijn door iets anders in het mandje) of de boeking
    afronden.
-6. Bij afronden: zoekt of maakt een klant aan via `POST /api2/klanten`
-   (Recras dedupliceert zelf op naam + e-mailadres). Daarna wordt **alles in
-   het mandje in 1 Recras-boeking** gezet, met 1 boekingsregel per
-   (sub)groep per activiteit, status **bevestigd**. Zie `recras.js`
-   (`maakCombinatieBoeking`).
+6. Bij afronden: wordt **alles in het mandje in 1 keer geboekt** via
+   `POST /api2/book_products` - een Recras-endpoint dat specifiek bedoeld is
+   voor dit soort combi-boekingen (meerdere producten/subgroepen in 1
+   boeking) en zelf het klant-matchen regelt (Recras dedupliceert op naam +
+   e-mailadres). Elk product krijgt zo nodig een `location_id` mee, status
+   is **definitief**. Zie `recras.js` (`maakCombinatieBoeking`).
 
 Dit is bewust nog geen "echt" boekproces via de `bookprocesses/book`
 Alpha-API - deze opzet praat rechtstreeks tegen de kern-endpoints.
@@ -306,8 +307,22 @@ Twee dingen zijn hiermee bevestigd:
   laat zien, kan de server ook nooit meer dan 2 cubes inplannen.
 - **Combideals en Activiteitendeals** staan als placeholder op de
   activiteitenpagina ("binnenkort beschikbaar") en doen nog niets.
-- **Dynamische prijzen** zijn nog niet meegenomen; de huidige live-prijs is
-  de standaard verkoopprijs van het product.
+- **Dynamische prijzen worden nog niet getoond (open punt).** Emiel gaf aan
+  dat het normale Recras-boekproces bij Bowling bijv. `€ 29,50` per baan
+  toont i.p.v. onze huidige (statische) `€ 34,50`, en wees op
+  `<div class="price-information" data-dynamic-price="86">` als voorbeeld
+  van hoe dat in de bestaande widget zit. Uitgezocht in de officiële Recras
+  API-documentatie (`/docs/api/`): dynamische prijzen zijn in Recras zelf
+  in te stellen (tijd-/vraaggebonden regels), maar er is **geen
+  gedocumenteerd API-endpoint gevonden waarmee je de al-berekende
+  dynamische prijs kunt opvragen** - alleen de standaard verkoopprijs van
+  het product (`ProductPrice[0].verkoop`), wat we nu al gebruiken. Om dit
+  echt op te lossen is meer nodig: bijvoorbeeld het exacte netwerkverzoek
+  dat de bestaande boekwidget doet (via de browser-devtools "Network"-tab)
+  wanneer die `€ 29,50` toont, zodat we kunnen zien welk endpoint/welke
+  parameters daarvoor gebruikt worden. Zonder dat kunnen we dit (en de
+  bijbehorende "Vanaf €X"-weergave bij meerdere prijzen op 1 dag) niet
+  betrouwbaar bouwen.
 - **Betaalmethode** (Mollie / op locatie) is nog niet gebouwd; elke boeking
   komt nu direct op status "bevestigd" te staan zonder betaalstap.
 - **Beelden per activiteit** ontbreken nog (tegels tonen alleen naam, duur
@@ -331,14 +346,13 @@ Twee dingen zijn hiermee bevestigd:
   naar geen foto als het laden mislukt), nu vierkant (`aspect-ratio: 1/1`)
   en met 3 activiteiten naast elkaar (`.activiteiten-grid`, met een
   mobiele fallback naar 2 resp. 1 kolom(men) op kleinere schermen).
-  **Lettertypes:** het echte "Mascot MVB"-fontbestand (`.otf`, door Emiel
-  aangeleverd) staat nu in `public/fonts/MVB-Mascot.otf` en wordt via
-  `@font-face` geladen - dit wordt ALLEEN gebruikt voor de grote
-  schermtitels (`h1`, `h2.schermtitel`), in wit met een oranje
-  slagschaduw (`text-shadow`), zoals gevraagd. Alle overige tekst
-  (activiteitnamen, mandje-item-namen, sectiekoppen, de titel van de
-  zijbalk, enz.) gebruikt gewoon Rubik, met oranje toegestaan als kleur.
-  De eerdere tijdelijke vervanger "Caveat" is hiermee vervallen.
+  **Lettertypes:** het "Mascot MVB"-lettertype (eerder een ronde geprobeerd
+  voor de grote schermtitels) is op verzoek weer volledig verwijderd - het
+  kwam niet mooi uit de verf. `public/fonts/MVB-Mascot.otf` is verwijderd en
+  de `@font-face`/`--font-display` staan niet meer in de CSS. Alle titels
+  (`h1`, `h2.schermtitel`) en overige tekst gebruiken nu gewoon Rubik (de
+  titels in een dik gewicht, 800), in wit met een oranje slagschaduw
+  (`text-shadow`) voor de titels.
 - **Mobielvriendelijkheid** is met de huidige CSS redelijk basaal geregeld
   (tegels/mandje passen zich aan), maar nog niet echt getest/verfijnd op
   telefoonformaat - moet nog een aparte ronde krijgen zodra de rest staat.
@@ -373,6 +387,15 @@ Twee dingen zijn hiermee bevestigd:
     steeds de vorige/volgende maand alvast op de achtergrond op zodra een
     maand getoond is (`prefetchBuurmaanden()`), zodat doorklikken meestal al
     uit de cache komt in plaats van te moeten wachten.
+  - **OPGELOST: kalender nog steeds traag (vooral bij november).**
+    `/api/dagen-beschikbaarheid` vroeg per maand de beschikbaarheid van ALLE
+    actieve producten op (7-8 losse Recras-calls) om te bepalen welke dagen
+    "open" zijn. Op verzoek van Emiel gebruikt dit nu alleen nog **Bowling**
+    als referentieproduct (1 Recras-call i.p.v. 7-8) - Bowling is namelijk
+    altijd open zodra FEC open is. Een dag telt nu als "open" zodra Bowling
+    daar sowieso een startmoment heeft (ongeacht of er nog capaciteit vrij
+    is) - dat laatste wordt toch al per activiteit exact gecheckt zodra de
+    klant er eentje kiest.
 - **Eigen pop-up en tooltip i.p.v. de browser-standaard.** De
   bevestigingsvraag bij het oplossen van een tijd-conflict en de melding bij
   een niet meer beschikbaar tijdstip gebruiken nu een eigen modal in
@@ -409,6 +432,53 @@ Twee dingen zijn hiermee bevestigd:
   boekingenoverzicht zijn **bewust niet gebouwd**: dat loopt straks via
   Recras' eigen klantportaal, Recras' e-mailinstellingen, en de normale
   Recras-agenda.
+- **OPGELOST: boeking kon niet gemaakt worden in Recras** (live fout:
+  `ERR_PRODUCT_REQUIRES_LOCATION` bij Lasergame, plus `ref [Required.]` op
+  meerdere boekingsregels). Uitgezocht via de officiële Recras API-docs: de
+  oude aanpak (los `POST /api2/klanten` + `POST`/`PUT /api2/boekingen`) had
+  2 structurele problemen - (1) sommige producten vereisen een expliciete
+  `locatie_id` per boekingsregel, die we nooit meestuurden, en (2) nieuwe
+  (niet-eerste) boekingsregels vereisen een `ref`-veld, dat we ook nooit
+  meestuurden. Beide problemen bestaan niet bij het los-daarvoor-bedoelde
+  endpoint **`POST /api2/book_products`**
+  (`/docs/api/endpoints/book_products.html`) - dit endpoint is precies
+  gemaakt voor combi-boekingen met meerdere producten in 1x, regelt zelf het
+  klant-matchen, en heeft geen `ref`-vereiste. De hele boeking-aanmaak is
+  hierop overgezet (zie `maakCombinatieBoeking()` in `recras.js`); daarbij
+  is ook een risico ontdekt en gerepareerd dat de beschikbaarheids-data van
+  Recras naast een "echte" locatie soms ook een extra
+  `{locatie_id: null, beschikbaarheid: 99999}`-regel bevat ("kan ook zonder
+  locatie geboekt worden") - de server las voorheen blind de EERSTE
+  locatie-regel, wat per ongeluk deze null-regel kon zijn i.p.v. de echte
+  capaciteit. `samenvattenLocaties()` in `server.js` telt nu alleen de
+  regels met een echte `locatie_id` mee en onthoudt een bruikbare
+  `locatieId` om mee te boeken.
+- **OPGELOST: te weinig ruimte tussen de activiteitentitel en de
+  "Terug naar activiteiten"-link, en de link zag er niet uit als knop.** De
+  terugknop is nu een gevulde oranje knop (`.knop-terug`) met duidelijke
+  marge onder zich, in plaats van een kale tekstlink.
+- **OPGELOST: boekingsoverzicht (zijbalk) stond niet gelijk met de bovenkant
+  van het andere paarse blok.** De paginatitel (`<h1>`/subtitel) stond
+  voorheen BINNEN hetzelfde flex-blok als het activiteitenblok, waardoor dat
+  blok hoger begon dan de zijbalk ernaast. De titel staat nu in een eigen
+  `.pagina-header`-blok boven de layout, zodat het activiteitenblok en de
+  zijbalk voortaan op exact dezelfde hoogte beginnen.
+- **OPGELOST: spraakballon bij een overlappend (conflict-)tijdstip had geen
+  duidelijke rand.** Zowel de tooltip-bel als het uitstekende pijltje hebben
+  nu een oranje rand, zodat de melding beter opvalt.
+- **OPGELOST/OMGEDRAAID: gedrag bij het bevestigen van een tijd-conflict.**
+  Klikken op "OK" plaatst de nieuw gekozen activiteit/tijd nu gewoon in de
+  planning (zoals de vorige ronde al oploste), maar schakelt de klant
+  daarna NIET meer terug naar het activiteitenoverzicht - in plaats daarvan
+  wordt meteen de VERWIJDERDE activiteit geopend, zodat de klant er direct
+  een nieuwe tijd voor kan kiezen. Zie de `pendingOpenSlugNaToevoegen`-vlag
+  in `public/index.html` (gezet in `klikOpConflictSlot()`, afgehandeld in
+  `voegToeAanMandje()`).
+- **OPGELOST: melding bij het overschrijden van de groepscapaciteit viel te
+  weinig op.** `.foutmelding` is omgezet van kale rode tekst naar een
+  duidelijk afgebakend blok: lichte oranje achtergrondtint, volledige
+  oranje rand plus een dikkere oranje rand aan de linkerkant, afgeronde
+  hoeken.
 
 ## Een geleerde les: hoe Recras' "begin"/"eind" bij beschikbaarheid werkt
 
