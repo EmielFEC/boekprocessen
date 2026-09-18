@@ -17,6 +17,21 @@ function getProduct(slug) {
   return product;
 }
 
+// TIJDELIJKE DIAGNOSE-ROUTE - haalt de ruwe startmomenten van 1 groep op om
+// te controleren waarom de online-beschikbaarheids-endpoint leeg blijft
+// terwijl de Recras-kalender wel startmomenten toont. Mag na het uitzoeken
+// van dat probleem weer verwijderd worden (zie ook recras.js).
+app.get('/api/debug/startmomentgroep/:id', async (req, res) => {
+  try {
+    const groepId = parseInt(req.params.id, 10);
+    const resultaat = await recras.getStartmomentenVoorGroep(groepId);
+    res.json(resultaat);
+  } catch (err) {
+    console.error(err);
+    res.status(err.status || 500).json({ error: 'Kon startmomenten niet ophalen', details: err.details });
+  }
+});
+
 // Lijst van beschikbare producten/activiteiten voor de frontend (dropdown, etc.)
 app.get('/api/producten', (req, res) => {
   const lijst = Object.entries(products)
