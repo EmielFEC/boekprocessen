@@ -216,83 +216,9 @@ async function maakGesplitsteBoeking({
   return bijgewerkteBoeking;
 }
 
-/**
- * TIJDELIJKE DIAGNOSE-FUNCTIE. Haalt de ruwe startmomenten van 1 specifieke
- * startmomentgroep op (met paginering, want /startmomenten geeft alles terug
- * zonder filter-parameter), zodat we kunnen zien of
- * `percentage_materiaal_online_boeking` misschien leeg staat - wat de
- * online/API-beschikbaarheid zou kunnen blokkeren terwijl de startmomenten
- * wel gewoon in de Recras-kalender zichtbaar zijn.
- */
-async function getStartmomentenVoorGroep(groepId, { maxPaginas = 15 } = {}) {
-  let pad = '/startmomenten';
-  const gevonden = [];
-  let paginasDoorlopen = 0;
-
-  while (pad && paginasDoorlopen < maxPaginas) {
-    const url = pad.startsWith('http') ? pad : `${BASE_URL}${pad}`;
-    const res = await fetch(url, {
-      headers: { Accept: 'application/json', Authorization: `Bearer ${RECRAS_TOKEN}` },
-    });
-    const data = await res.json();
-
-    if (!res.ok) {
-      const error = new Error(`Recras API GET ${pad} gaf status ${res.status}`);
-      error.status = res.status;
-      error.details = data;
-      throw error;
-    }
-
-    for (const startmoment of data) {
-      if (startmoment.startmomentgroep_id === groepId) gevonden.push(startmoment);
-    }
-
-    const linkHeader = res.headers.get('link') || '';
-    const match = linkHeader.match(/<([^>]+)>;\s*rel="next"/);
-    pad = match ? match[1] : null;
-    paginasDoorlopen++;
-  }
-
-  return { gevonden, paginasDoorlopen, volledigDoorzocht: !pad };
-}
-
-/**
- * TIJDELIJKE REPARATIE-FUNCTIE. Zet `percentage_materiaal_online_boeking`
- * op elk startmoment van een groep naar een gekozen waarde (bijv. 100),
- * zodat we kunnen testen of dit veld inderdaad de online/API-
- * beschikbaarheid blokkeerde toen het op `null` stond.
- */
-async function zetOnlinePercentageVoorGroep(groepId, percentage) {
-  const { gevonden } = await getStartmomentenVoorGroep(groepId);
-  const resultaten = [];
-
-  for (const startmoment of gevonden) {
-    const res = await fetch(`${BASE_URL}/startmomenten/${startmoment.id}`, {
-      method: 'PUT',
-      headers: {
-        Accept: 'application/json',
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${RECRAS_TOKEN}`,
-      },
-      body: JSON.stringify({
-        id: startmoment.id,
-        startmomentgroep_id: startmoment.startmomentgroep_id,
-        datetime: startmoment.datetime,
-        percentage_materiaal_online_boeking: percentage,
-      }),
-    });
-    const data = await res.json();
-    resultaten.push({ id: startmoment.id, status: res.status, ok: res.ok, data });
-  }
-
-  return resultaten;
-}
-
 module.exports = {
   getBeschikbaarheid,
   vindOfMaakKlant,
   maakBoeking,
   maakGesplitsteBoeking,
-  getStartmomentenVoorGroep,
-  zetOnlinePercentageVoorGroep,
 };

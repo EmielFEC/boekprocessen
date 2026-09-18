@@ -13,9 +13,12 @@ een schaalbaar, custom boeksysteem voor de FEC-website.
    - Past de groep in 1 moment? Dan kiest de bezoeker gewoon een tijd, zoals
      bij een normale boeking.
    - Is de groep te groot voor 1 moment (bijv. 22 personen op een activiteit
-     met capaciteit 10)? Dan wordt de groep automatisch **zo gelijk mogelijk
-     verdeeld** over meerdere opeenvolgende momenten (bijv. 8 + 7 + 7), met
-     een voorgesteld tijdschema erbij (zie `planning.js`).
+     met capaciteit 10)? Dan wordt eerst berekend hoe de groep **zo gelijk
+     mogelijk verdeeld** wordt (bijv. 8 + 7 + 7), en kiest de bezoeker zelf de
+     starttijd van de **eerste** subgroep. Daarna berekent de server
+     automatisch het optimale (zo aansluitend mogelijke) vervolgschema voor
+     de overige subgroepen, te bevestigen door de bezoeker (zie `planning.js`,
+     functies `planBoeking` en `planVervolgSchema`).
 3. De zijbalk toont continu een boekingsoverzicht: activiteit, aantal,
    prijsindicatie en - zodra bekend - de voorgestelde tijd(en) per (sub)groep.
 4. Bij bevestigen: zoekt of maakt een klant aan via `POST /api2/klanten`
@@ -140,17 +143,22 @@ kunt lezen en testen zonder een echte API-verbinding nodig te hebben.
    je dit getal per product apart moeten vastleggen (net als
    `prijs_per_persoon` in `products.json`) in plaats van het af te leiden.
 3. Past de groep in 1 moment? Dan krijgt de bezoeker gewoon een keuze uit alle
-   momenten die groot genoeg zijn.
+   momenten die groot genoeg zijn (`planBoeking` geeft `status: 'enkel'`).
 4. Past de groep niet in 1 moment? Dan wordt het aantal benodigde groepen
    berekend (`Math.ceil(aantal / capaciteit)`) en het aantal personen zo
-   gelijk mogelijk verdeeld (bijv. 22 bij capaciteit 10 -> 8 + 7 + 7). Elke
-   subgroep krijgt vervolgens het eerstvolgende moment die dag dat groot
-   genoeg is. Dit hoeven **niet per se aaneengesloten tijden** te zijn (als
-   een tussenliggend moment toevallig al te vol zit, wordt die overgeslagen)
-   - voor de meeste dagen met normale bezetting geeft dit gewoon nette
-     opeenvolgende tijden.
-5. Past de groep helemaal niet (te weinig momenten die dag), dan krijgt de
-   bezoeker een duidelijke melding in plaats van een gedeeltelijk voorstel.
+   gelijk mogelijk verdeeld (bijv. 22 bij capaciteit 10 -> 8 + 7 + 7)
+   (`planBoeking` geeft dan `status: 'kies_starttijd'` plus de mogelijke
+   starttijden voor de EERSTE subgroep).
+5. De bezoeker kiest zelf de starttijd van groep 1. Op basis daarvan berekent
+   `planVervolgSchema` het vervolgschema: elke volgende subgroep krijgt het
+   eerstvolgende moment ná het gekozen startmoment dat groot genoeg is. Dit
+   hoeven **niet per se aaneengesloten tijden** te zijn (als een
+   tussenliggend moment toevallig al te vol zit, wordt die overgeslagen) -
+   voor de meeste dagen met normale bezetting geeft dit gewoon nette
+   opeenvolgende tijden.
+6. Past het daarna niet meer (te weinig momenten ná de gekozen starttijd),
+   dan krijgt de bezoeker een duidelijke melding en kan die een andere
+   starttijd voor groep 1 kiezen, in plaats van een gedeeltelijk voorstel.
 
 Wat dit (bewust) nog niet doet: rekening houden met personeelsbezetting,
 sluitingstijden versus laatste startmoment, of een voorkeur voor "zo vroeg
@@ -175,11 +183,13 @@ minstens dit nog nodig:
   ontbrekende kostenregels). Krijg je een foutmelding, dan toont het
   testscherm de ruwe Recras-foutmelding (`details` in de JSON-respons),
   stuur die door dan zoeken we het gericht uit.
-- **Race conditions.** Twee gelijktijdige boekingen op hetzelfde tijdslot
-  kunnen elkaar nu nog inhalen. Een tijdelijke "hold" op een tijdslot terwijl
-  iemand het formulier afrondt is nodig voordat dit live gaat. Dit is extra
-  belangrijk bij een gesplitste groep: tussen het tonen van het voorstel en
-  het bevestigen ervan kan een ander de tijd net volboeken.
+- **Race conditions.** Tussen het tonen van een voorstel (of vervolgschema)
+  en het bevestigen ervan kan iemand anders een van die momenten alsnog
+  volboeken - `planVervolgSchema` checkt alleen of het gekozen moment van
+  groep 1 op dat moment nog past, niet de vervolgmomenten. Een tijdelijke
+  "hold" op een tijdslot terwijl iemand het formulier afrondt is nodig
+  voordat dit live gaat, zeker bij een gesplitste groep met meerdere
+  momenten tegelijk.
 - **Prijsweergave is nog een indicatie.** De prijs komt nu uit het handmatig
   ingevulde `prijs_per_persoon` in `products.json`, niet rechtstreeks uit
   Recras. Zodra een product complexere prijsregels heeft (staffels, dynamic
@@ -201,11 +211,28 @@ minstens dit nog nodig:
   `bookprocesses/book` API in plaats van deze rechtstreekse aanpak, of een
   eigen stappen-wizard die meerdere `boekingsregels` in één boeking bundelt.
 
+## Een geleerde les: hoe Recras' "begin"/"eind" bij beschikbaarheid werkt
+
+Bij `GET /api2/producten/{id}/beschikbaarheid` is `begin` exclusief en `eind`
+inclusief - maar "inclusief" betekent hier **inclusief het exacte tijdstip
+00:00:00 van die datum**, niet "tot en met het einde van die dag". Om alle
+momenten OP een gekozen dag (bijv. 09:00-17:00) op te vragen, gebruik je dus:
+
+```
+begin = de gekozen dag zelf       (bijv. 2026-10-01)
+eind  = de dag ERNA                (bijv. 2026-10-02)
+```
+
+Niet `begin = dag ervoor, eind = de gekozen dag` (dat lijkt logischer gezien
+de exclusief/inclusief-namen, maar levert een lege lijst op voor de gekozen
+dag zelf). Deze functie zit nu correct in `dagBereik()` in `server.js`.
+
 ## API-routes van deze server (voor eigen gebruik/uitbreiding)
 
 - `GET /api/producten` - lijst van geconfigureerde activiteiten
-- `GET /api/plan/:slug?datum=YYYY-MM-DD&aantal=N` - boekingsvoorstel (enkel of gesplitst) plus prijsindicatie
-- `POST /api/boeking-groep` - maakt 1 of meerdere boekingen aan op basis van zo'n voorstel
+- `GET /api/plan/:slug?datum=YYYY-MM-DD&aantal=N` - stap 1: `enkel` (kies een tijd), `kies_starttijd` (kies de starttijd van groep 1), of `onmogelijk`
+- `GET /api/plan-vervolg/:slug?datum=&aantal=&start=<ISO-startmoment>` - stap 2 (alleen bij `kies_starttijd`): berekent het vervolgschema voor de overige subgroepen
+- `POST /api/boeking-groep` - maakt de boeking aan op basis van het bevestigde voorstel (1 of meerdere `groepen`)
 
 ## Relevante Recras API-referenties
 

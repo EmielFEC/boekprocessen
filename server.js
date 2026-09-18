@@ -4,7 +4,7 @@ const express = require('express');
 const path = require('path');
 const products = require('./products.json');
 const recras = require('./recras');
-const { planBoeking } = require('./planning');
+const { planBoeking, planVervolgSchema } = require('./planning');
 
 const app = express();
 app.use(express.json());
@@ -17,35 +17,16 @@ function getProduct(slug) {
   return product;
 }
 
-// TIJDELIJKE DIAGNOSE-ROUTE - haalt de ruwe startmomenten van 1 groep op om
-// te controleren waarom de online-beschikbaarheids-endpoint leeg blijft
-// terwijl de Recras-kalender wel startmomenten toont. Mag na het uitzoeken
-// van dat probleem weer verwijderd worden (zie ook recras.js).
-app.get('/api/debug/startmomentgroep/:id', async (req, res) => {
-  try {
-    const groepId = parseInt(req.params.id, 10);
-    const resultaat = await recras.getStartmomentenVoorGroep(groepId);
-    res.json(resultaat);
-  } catch (err) {
-    console.error(err);
-    res.status(err.status || 500).json({ error: 'Kon startmomenten niet ophalen', details: err.details });
-  }
-});
-
-// TIJDELIJKE REPARATIE-ROUTE - zet percentage_materiaal_online_boeking op
-// alle startmomenten van een groep naar een gekozen waarde. Gebruik:
-// POST /api/debug/startmomentgroep/143/zet-percentage  body: { percentage: 100 }
-app.post('/api/debug/startmomentgroep/:id/zet-percentage', async (req, res) => {
-  try {
-    const groepId = parseInt(req.params.id, 10);
-    const percentage = req.body?.percentage ?? 100;
-    const resultaten = await recras.zetOnlinePercentageVoorGroep(groepId, percentage);
-    res.json({ aangepast: resultaten.length, resultaten });
-  } catch (err) {
-    console.error(err);
-    res.status(err.status || 500).json({ error: 'Kon percentage niet aanpassen', details: err.details });
-  }
-});
+// Recras' "eind" is inclusief tot precies 00:00:00 van die datum, niet tot
+// en met het einde van die dag. Om alle momenten OP de gekozen dag te pakken
+// (bijv. 09:00-17:00) gebruik je dus begin = de dag zelf en eind = de dag
+// erna. (Eerder stond dit hier verkeerd om: dat gaf een lege lijst terug
+// voor de gekozen dag zelf.)
+function dagBereik(datum) {
+  const volgendeDag = new Date(`${datum}T00:00:00Z`);
+  volgendeDag.setUTCDate(volgendeDag.getUTCDate() + 1);
+  return { begin: datum, eind: volgendeDag.toISOString().slice(0, 10) };
+}
 
 // Lijst van beschikbare producten/activiteiten voor de frontend (dropdown, etc.)
 app.get('/api/producten', (req, res) => {
@@ -102,15 +83,10 @@ app.get('/api/plan/:slug', async (req, res) => {
     });
   }
 
-  // "eind" is exclusief in de vraag hierboven aan de gebruiker, maar Recras'
-  // "eind" parameter is inclusief en "begin" exclusief - daarom vragen we de
-  // dag zelf tot en met de dag zelf op, met begin op de dag ervoor.
-  const vorigeDag = new Date(`${datum}T00:00:00Z`);
-  vorigeDag.setUTCDate(vorigeDag.getUTCDate() - 1);
-  const begin = vorigeDag.toISOString().slice(0, 10);
+  const { begin, eind } = dagBereik(datum);
 
   try {
-    const momenten = await recras.getBeschikbaarheid(product.product_id, begin, datum);
+    const momenten = await recras.getBeschikbaarheid(product.product_id, begin, eind);
     const plan = planBoeking(momenten, aantal);
 
     const prijs_per_persoon = product.prijs_per_persoon ?? null;
@@ -128,6 +104,57 @@ app.get('/api/plan/:slug', async (req, res) => {
     console.error(err);
     res.status(err.status || 500).json({
       error: 'Kon planning niet berekenen',
+      details: err.details,
+    });
+  }
+});
+
+// Vervolgschema opvragen nadat de klant de starttijd van groep 1 heeft
+// gekozen: GET /api/plan-vervolg/springkussen?datum=2026-10-01&aantal=22&start=2026-10-01T09:40:00%2B02:00
+app.get('/api/plan-vervolg/:slug', async (req, res) => {
+  const product = getProduct(req.params.slug);
+  if (!product) return res.status(404).json({ error: 'Onbekend product' });
+
+  const { datum, start } = req.query;
+  const aantal = parseInt(req.query.aantal, 10);
+
+  if (!datum || !aantal || aantal < 1 || !start) {
+    return res.status(400).json({
+      error: 'Query parameters "datum", "aantal" en "start" zijn verplicht',
+    });
+  }
+
+  const { begin, eind } = dagBereik(datum);
+
+  try {
+    const momenten = await recras.getBeschikbaarheid(product.product_id, begin, eind);
+
+    // Groepsgroottes opnieuw afleiden (zelfde berekening als stap 1), zodat
+    // de client dit niet zelf hoeft mee te sturen en niet kan manipuleren.
+    const stap1 = planBoeking(momenten, aantal);
+    if (stap1.status !== 'kies_starttijd') {
+      return res.status(400).json({
+        error: 'Deze groep vereist geen (of geen geldige) starttijdkeuze meer - vraag de planning opnieuw op.',
+      });
+    }
+
+    const plan = planVervolgSchema(momenten, stap1.groepsgroottes, start);
+
+    const prijs_per_persoon = product.prijs_per_persoon ?? null;
+    const totale_prijs = prijs_per_persoon != null ? prijs_per_persoon * aantal : null;
+
+    res.json({
+      slug: req.params.slug,
+      naam: product.naam,
+      aantal,
+      prijs_per_persoon,
+      totale_prijs,
+      plan,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(err.status || 500).json({
+      error: 'Kon vervolgschema niet berekenen',
       details: err.details,
     });
   }

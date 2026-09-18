@@ -261,6 +261,9 @@
         html += '</div>';
       } else if (plan.status === 'enkel' && plan.opties && plan.opties.length) {
         html += `<p class="hint">Kies hiernaast nog een tijd uit ${plan.opties.length} mogelijke momenten.</p>`;
+      } else if (plan.status === 'kies_starttijd') {
+        html += `<span class="splits-badge">Groep wordt gesplitst</span>`;
+        html += `<p class="hint">Kies hiernaast de starttijd van groep 1 (${plan.groepsgroottes.join(' + ')} personen).</p>`;
       } else if (plan.status === 'onmogelijk') {
         html += `<p class="hint">${plan.reden}</p>`;
       }
@@ -307,6 +310,9 @@
 
   // Bewaart welke tijd(en) definitief gekozen zijn, klaar om te boeken.
   let gekozenGroepen = null;
+  // Bewaart de laatste "kies_starttijd"-stap, zodat we de tijdkeuze voor
+  // groep 1 opnieuw kunnen tonen als het vervolgschema niet uitkomt.
+  let laatsteKiesStarttijdPlan = null;
 
   function renderPlan(plan) {
     gekozenGroepen = null;
@@ -316,26 +322,9 @@
       return;
     }
 
-    if (plan.status === 'gesplitst') {
-      // Bij een gesplitste groep ligt het tijdschema al vast (evenredig
-      // verdeeld over de eerstvolgende geschikte momenten). De klant
-      // bevestigt het voorstel in plaats van zelf te kiezen.
-      let html = `<p class="hint">Deze groep is groter dan de capaciteit per moment (${plan.capaciteit}) en wordt daarom automatisch verdeeld:</p>`;
-      plan.groepen.forEach((g, i) => {
-        html += `
-          <div class="voorstel-groep">
-            <strong>Groep ${i + 1}</strong> - ${g.aantal} personen om ${tijdNotatie(g.startmoment)}
-          </div>
-        `;
-      });
-      html += `<button id="bevestigVoorstelBtn" type="button">Voorstel bevestigen</button>`;
-      planResultaat.innerHTML = html;
-
-      document.getElementById('bevestigVoorstelBtn').addEventListener('click', () => {
-        gekozenGroepen = plan.groepen.map((g) => ({ aantal: g.aantal, begin: g.startmoment }));
-        stap3.disabled = false;
-        stap3.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      });
+    if (plan.status === 'kies_starttijd') {
+      laatsteKiesStarttijdPlan = plan;
+      renderKiesStarttijd(plan);
       return;
     }
 
@@ -363,6 +352,88 @@
         stap3.disabled = false;
         stap3.scrollIntoView({ behavior: 'smooth', block: 'start' });
       });
+    });
+  }
+
+  // Toont de melding + tijdkeuze voor groep 1 van een gesplitste groep.
+  function renderKiesStarttijd(plan) {
+    const slotsHtml = plan.opties
+      .map(
+        (optie) =>
+          `<div class="slot" data-moment="${optie.startmoment}">${tijdNotatie(optie.startmoment)} (${optie.beschikbaarheid} vrij)</div>`
+      )
+      .join('');
+
+    planResultaat.innerHTML = `
+      <p class="hint">Deze groep is groter dan de capaciteit per moment (${plan.capaciteit}) en wordt daarom automatisch verdeeld. Kies de starttijd van de eerste groep (${plan.groepsgroottes[0]} personen):</p>
+      <div class="slots">${slotsHtml}</div>
+    `;
+
+    planResultaat.querySelectorAll('.slot').forEach((el) => {
+      el.addEventListener('click', () => haalVervolgSchemaOp(el.dataset.moment));
+    });
+  }
+
+  // Nadat groep 1 gekozen is: vraagt de server het optimale vervolgschema
+  // voor de overige subgroepen op, en toont dat ter bevestiging.
+  async function haalVervolgSchemaOp(gekozenStart) {
+    planResultaat.innerHTML = '<p class="hint">Bezig met plannen...</p>';
+
+    const slug = productSelect.value;
+    const aantal = parseInt(aantalInput.value, 10);
+    const datum = datumInput.value;
+
+    try {
+      const res = await fetch(
+        `/api/plan-vervolg/${slug}?datum=${datum}&aantal=${aantal}&start=${encodeURIComponent(gekozenStart)}`
+      );
+      const data = await res.json();
+      if (!res.ok) {
+        const detail = data.details ? ' - ' + JSON.stringify(data.details) : '';
+        throw new Error((data.error || 'Onbekende fout') + detail);
+      }
+
+      huidigPlan = data;
+      renderVervolgSchema(data.plan);
+      verversZijbalk();
+    } catch (err) {
+      planResultaat.innerHTML = `<p class="hint">Fout bij plannen: ${err.message}</p>`;
+    }
+  }
+
+  // Toont het volledige voorgestelde schema (alle subgroepen) ter bevestiging.
+  function renderVervolgSchema(plan) {
+    gekozenGroepen = null;
+
+    if (plan.status === 'onmogelijk') {
+      let html = `<p class="hint">${plan.reden}</p>`;
+      html += `<button id="anderStartBtn" type="button" class="secundair">Kies een andere starttijd voor groep 1</button>`;
+      planResultaat.innerHTML = html;
+      document.getElementById('anderStartBtn').addEventListener('click', () => {
+        if (laatsteKiesStarttijdPlan) renderKiesStarttijd(laatsteKiesStarttijdPlan);
+      });
+      return;
+    }
+
+    let html = '<p class="hint">Voorgesteld tijdschema:</p>';
+    plan.groepen.forEach((g, i) => {
+      html += `
+        <div class="voorstel-groep">
+          <strong>Groep ${i + 1}</strong> - ${g.aantal} personen om ${tijdNotatie(g.startmoment)}
+        </div>
+      `;
+    });
+    html += `<button id="bevestigVoorstelBtn" type="button">Voorstel bevestigen</button>`;
+    html += `<button id="anderStartBtn" type="button" class="secundair">Kies een andere starttijd voor groep 1</button>`;
+    planResultaat.innerHTML = html;
+
+    document.getElementById('bevestigVoorstelBtn').addEventListener('click', () => {
+      gekozenGroepen = plan.groepen.map((g) => ({ aantal: g.aantal, begin: g.startmoment }));
+      stap3.disabled = false;
+      stap3.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    document.getElementById('anderStartBtn').addEventListener('click', () => {
+      if (laatsteKiesStarttijdPlan) renderKiesStarttijd(laatsteKiesStarttijdPlan);
     });
   }
 
