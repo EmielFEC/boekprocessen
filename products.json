@@ -1,0 +1,11 @@
+{
+  "_comment": "Elke sleutel is een eigen 'slug' die je in de website-URL of widget gebruikt (bijv. /api/beschikbaarheid/springkussen). Voeg hier straks andere producten of bookprocessen aan toe zonder de servercode te wijzigen.",
+
+  "springkussen": {
+    "product_id": 1859,
+    "naam": "Springkussen (TEST)",
+    "duur_minuten": 15,
+    "locatie_id": null,
+    "book_process_id": null
+  }
+}

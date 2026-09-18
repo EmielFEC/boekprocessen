@@ -1,0 +1,20 @@
+{
+  "name": "recras-boekproces",
+  "version": "1.0.0",
+  "description": "Testboekproces voor Recras, bedoeld voor deploy op Render.com",
+  "main": "server.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "dotenv": "^18.0.0",
+    "express": "^5.2.1",
+    "node-fetch": "^2.7.0"
+  }
+}
