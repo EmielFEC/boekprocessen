@@ -6,29 +6,51 @@
 <title>Boekproces - FEC Sevenum</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600;700&family=Caveat:wght@600;700&display=swap" rel="stylesheet">
 <style>
   :root {
-    /* FEC Sevenum huisstijl */
+    /* FEC Sevenum huisstijl - paars nu als dominante kleur (zie voorbeeldscherm) */
     --paars: #2c1d49;
+    --paars-donker: #1c1330;
+    --paars-kaart: #3b2960;
+    --paars-kaart-licht: #4d3878;
     --oranje: #f39313;
     --beige: #f2ede7;
     --accent: var(--oranje);
-    --bg: var(--beige);
-    --text: #241a3a;
-    --border: #e2d9cd;
+    --bg: var(--paars-donker);
+    --tekst: var(--beige);
+    --tekst-gedimd: #c6b9de;
+    --border: rgba(255, 255, 255, 0.12);
+    /* Script/weergavelettertype "Caveat" is een tijdelijk vervangfont voor
+       "Mascot MVB" (een eigen/betaald font dat niet via Google Fonts te
+       laden is) - vervang zodra het echte font-bestand beschikbaar is. */
+    --font-display: "Caveat", "Rubik", cursive;
   }
   * { box-sizing: border-box; }
   body {
     font-family: "Rubik", system-ui, -apple-system, "Segoe UI", sans-serif;
     background: var(--bg);
-    color: var(--text);
+    color: var(--tekst);
     margin: 0;
     padding: 24px 16px 60px;
   }
-  h1 { font-size: 1.5rem; margin: 0 0 4px; color: var(--paars); font-weight: 700; }
-  h2.schermtitel { font-size: 1.15rem; margin: 0 0 4px; color: var(--paars); font-weight: 600; }
-  p.subtitle { color: #6b6178; margin-top: 0; margin-bottom: 24px; }
+  h1 {
+    font-family: var(--font-display);
+    font-size: 2.4rem;
+    line-height: 1;
+    margin: 0 0 4px;
+    color: var(--oranje);
+    font-weight: 700;
+  }
+  h2.schermtitel {
+    font-family: var(--font-display);
+    font-size: 1.7rem;
+    line-height: 1;
+    margin: 0 0 6px;
+    color: var(--oranje);
+    font-weight: 700;
+  }
+  p.subtitle { color: var(--tekst-gedimd); margin-top: 0; margin-bottom: 24px; }
 
   .layout {
     max-width: 960px;
@@ -45,22 +67,23 @@
     position: sticky;
     top: 24px;
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: 10px;
     padding: 16px;
-    background: white;
+    background: var(--paars-kaart);
   }
-  .zijbalk h2 { font-size: 1.05rem; margin: 0 0 12px; color: var(--paars); }
-  .zijbalk .bezoekinfo { font-size: 0.85rem; color: #555; margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
+  .zijbalk h2 { font-family: var(--font-display); font-size: 1.6rem; margin: 0 0 12px; color: var(--oranje); }
+  .zijbalk .bezoekinfo { font-size: 0.85rem; color: var(--tekst-gedimd); margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
   .mandje-item {
-    padding: 8px 0;
+    padding: 10px 0;
     border-bottom: 1px dashed var(--border);
     font-size: 0.9rem;
   }
   .mandje-item:last-of-type { border-bottom: none; }
   .mandje-item .regelkop { display: flex; justify-content: space-between; align-items: center; }
-  .mandje-item .tijden { color: #555; margin-top: 2px; }
+  .mandje-item .regelkop strong { font-family: var(--font-display); font-size: 1.2rem; color: var(--beige); font-weight: 700; }
   .mandje-item .verwijder {
-    background: none; border: none; color: #b33; cursor: pointer; padding: 0 0 0 8px; margin: 0; font-size: 0.85rem;
+    background: none; border: none; color: #f0a; cursor: pointer; padding: 0 0 0 8px; margin: 0; font-size: 0.85rem;
+    color: #ff8a8a;
   }
   .zijbalk .totaal {
     margin-top: 10px;
@@ -69,101 +92,143 @@
     display: flex;
     justify-content: space-between;
     font-weight: 700;
+    color: var(--beige);
   }
-  .zijbalk .placeholder { color: #999; font-size: 0.85rem; }
+  .zijbalk .placeholder { color: var(--tekst-gedimd); font-size: 0.85rem; }
 
   .kaart {
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: 10px;
     padding: 16px;
     margin-bottom: 20px;
-    background: white;
+    background: var(--paars-kaart);
   }
-  label { display: block; margin-top: 12px; margin-bottom: 4px; font-size: 0.9rem; }
+  label { display: block; margin-top: 12px; margin-bottom: 4px; font-size: 0.9rem; color: var(--tekst-gedimd); }
   input, select {
     width: 100%;
     padding: 8px 10px;
     border: 1px solid var(--border);
     border-radius: 6px;
     font-size: 1rem;
+    background: var(--beige);
+    color: #241a3a;
   }
   button {
     background: var(--accent);
     color: white;
     border: none;
     padding: 10px 18px;
-    border-radius: 6px;
+    border-radius: 20px;
     font-size: 1rem;
+    font-weight: 600;
     cursor: pointer;
     margin-top: 12px;
     margin-right: 8px;
   }
   button:disabled { opacity: 0.5; cursor: not-allowed; }
-  button.secundair { background: white; color: var(--accent); border: 1px solid var(--accent); }
-  button.tekstlink { background: none; color: var(--accent); text-decoration: underline; padding: 0; margin: 12px 0 0; font-size: 0.85rem; }
+  button.secundair { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+  button.tekstlink { background: none; color: var(--oranje); text-decoration: underline; padding: 0; margin: 12px 0 0; font-size: 0.85rem; font-weight: 400; }
 
   .scherm[hidden] { display: none; }
 
   .activiteiten-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-    gap: 12px;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 14px;
     margin: 12px 0 24px;
   }
   .activiteit-tegel {
     border: 1px solid var(--border);
-    border-radius: 8px;
-    background: white;
-    color: var(--text);
-    padding: 14px;
+    border-radius: 10px;
+    background: var(--paars-kaart);
+    color: var(--tekst);
+    padding: 0 0 14px;
     cursor: pointer;
     text-align: left;
+    overflow: hidden;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.25);
   }
   .activiteit-tegel:hover { border-color: var(--accent); }
-  .activiteit-tegel .naam { font-weight: 600; color: var(--text); font-size: 1rem; }
-  .activiteit-tegel .details { color: #666; font-size: 0.85rem; margin-top: 4px; }
-  .activiteit-tegel .prijs { color: var(--accent); font-size: 0.85rem; margin-top: 6px; }
+  .activiteit-tegel .foto {
+    width: 100%;
+    height: 100px;
+    object-fit: cover;
+    display: block;
+    background: var(--paars-kaart-licht);
+  }
+  .activiteit-tegel .tegel-inhoud { padding: 12px 14px 0; }
+  .activiteit-tegel .naam { font-family: var(--font-display); font-weight: 700; color: var(--oranje); font-size: 1.4rem; line-height: 1.1; }
+  .activiteit-tegel .details { color: var(--tekst-gedimd); font-size: 0.85rem; margin-top: 4px; }
+  .activiteit-tegel .prijs {
+    display: inline-block;
+    color: var(--paars-donker);
+    background: var(--beige);
+    font-size: 0.78rem;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 12px;
+    margin-top: 8px;
+  }
 
   .placeholder-sectie {
     border: 1px dashed var(--border);
-    border-radius: 8px;
+    border-radius: 10px;
     padding: 14px;
-    color: #888;
+    color: var(--tekst-gedimd);
     font-size: 0.9rem;
     margin-bottom: 20px;
   }
-  .sectiekop { font-weight: 600; margin: 24px 0 4px; font-size: 1rem; color: var(--paars); }
+  .sectiekop { font-family: var(--font-display); font-weight: 700; margin: 24px 0 4px; font-size: 1.4rem; color: var(--oranje); }
 
   .slots {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
+    gap: 10px;
     margin-top: 10px;
   }
   .slot {
+    position: relative;
     border: 1px solid var(--border);
-    border-radius: 20px;
-    padding: 6px 14px;
+    border-radius: 12px;
+    padding: 8px 16px;
     cursor: pointer;
     font-size: 0.9rem;
-    background: white;
+    background: var(--paars-kaart-licht);
+    color: var(--tekst);
+    text-align: center;
+    min-width: 84px;
   }
+  .slot-tijd { font-weight: 700; font-size: 1rem; }
+  .slot-detail { font-size: 0.72rem; color: var(--tekst-gedimd); margin-top: 2px; }
+  .slot-badge {
+    display: inline-block;
+    margin-top: 4px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    background: var(--accent);
+    color: white;
+  }
+  .slot:hover { border-color: var(--accent); }
   .slot.selected { background: var(--accent); color: white; border-color: var(--accent); }
+  .slot.selected .slot-detail { color: rgba(255,255,255,0.85); }
   .slot.disabled {
-    color: #aaa;
-    background: #f0f0f0;
-    border-color: #eee;
+    color: var(--tekst-gedimd);
+    background: rgba(255,255,255,0.05);
+    border-color: transparent;
     cursor: not-allowed;
-    text-decoration: line-through;
   }
+  .slot.disabled .slot-tijd { text-decoration: line-through; }
+  .slot.disabled .slot-detail { color: var(--tekst-gedimd); }
   .slot.conflict {
-    position: relative;
-    border: 2px solid #c0392b;
-    background: #fdecea;
-    color: #c0392b;
-    cursor: pointer;
+    border: 2px solid #ff6b6b;
+    background: rgba(255, 107, 107, 0.12);
+    color: #ffb3b3;
   }
-  .slot.conflict:hover { background: #fbdbd7; }
+  .slot.conflict .slot-tijd { color: #ffb3b3; }
+  .slot.conflict:hover { background: rgba(255, 107, 107, 0.2); }
   /* Eigen spraakballonnetje i.p.v. de standaard browser-tooltip (title-attribuut) */
   .slot.conflict:hover::after {
     content: attr(data-tooltip);
@@ -171,8 +236,8 @@
     bottom: calc(100% + 10px);
     left: 50%;
     transform: translateX(-50%);
-    background: var(--paars);
-    color: white;
+    background: var(--paars-kaart-licht);
+    color: var(--tekst);
     padding: 8px 12px;
     border-radius: 8px;
     font-size: 0.78rem;
@@ -181,7 +246,7 @@
     width: max-content;
     max-width: 240px;
     text-align: left;
-    box-shadow: 0 6px 18px rgba(36,26,58,0.25);
+    box-shadow: 0 6px 18px rgba(0,0,0,0.4);
     z-index: 30;
     pointer-events: none;
   }
@@ -192,7 +257,7 @@
     left: 50%;
     transform: translateX(-50%);
     border: 6px solid transparent;
-    border-top-color: var(--paars);
+    border-top-color: var(--paars-kaart-licht);
     z-index: 30;
     pointer-events: none;
   }
@@ -201,7 +266,7 @@
   .modal-overlay {
     position: fixed;
     inset: 0;
-    background: rgba(36, 26, 58, 0.45);
+    background: rgba(10, 6, 20, 0.6);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -210,23 +275,24 @@
   }
   .modal-overlay[hidden] { display: none; }
   .modal-kaart {
-    background: white;
+    background: var(--paars-kaart);
+    border: 1px solid var(--border);
     border-radius: 10px;
     padding: 20px 24px;
     max-width: 380px;
-    box-shadow: 0 10px 40px rgba(0,0,0,0.25);
+    box-shadow: 0 10px 40px rgba(0,0,0,0.5);
   }
-  .modal-kaart p { margin: 0 0 16px; color: var(--text); line-height: 1.4; }
+  .modal-kaart p { margin: 0 0 16px; color: var(--tekst); line-height: 1.4; }
   .modal-knoppen { display: flex; gap: 8px; justify-content: flex-end; }
   .modal-knoppen button { margin: 0; }
 
   /* Kalender (stap 1) */
   .kalender {
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: 10px;
     padding: 10px;
     margin-top: 4px;
-    background: white;
+    background: var(--paars-kaart-licht);
   }
   .kalender-header {
     display: flex;
@@ -234,26 +300,26 @@
     align-items: center;
     margin-bottom: 8px;
     font-weight: 600;
-    color: var(--paars);
+    color: var(--oranje);
     text-transform: capitalize;
   }
   .kalender-nav {
     background: none;
     border: none;
-    color: var(--paars);
+    color: var(--oranje);
     font-size: 1.3rem;
     line-height: 1;
     padding: 2px 10px;
     margin: 0;
     cursor: pointer;
   }
-  .kalender-nav:hover { color: var(--accent); }
+  .kalender-nav:hover { color: var(--beige); }
   .kalender-dagen-header {
     display: grid;
     grid-template-columns: repeat(7, 1fr);
     text-align: center;
     font-size: 0.75rem;
-    color: #888;
+    color: var(--tekst-gedimd);
     margin-bottom: 4px;
   }
   .kalender-grid {
@@ -269,37 +335,37 @@
     border-radius: 6px;
     cursor: pointer;
     font-size: 0.9rem;
-    color: var(--text);
+    color: var(--tekst);
   }
   .kal-dag.leeg { cursor: default; }
-  .kal-dag:not(.leeg):not([disabled]):hover { background: var(--bg); }
+  .kal-dag:not(.leeg):not([disabled]):hover { background: rgba(255,255,255,0.1); }
   .kal-dag.geselecteerd { background: var(--accent); color: white; font-weight: 600; }
-  .kal-dag.uitgeschakeld { color: #ccc; cursor: not-allowed; text-decoration: line-through; }
+  .kal-dag.uitgeschakeld { color: rgba(255,255,255,0.25); cursor: not-allowed; text-decoration: line-through; }
 
   /* Mandje/zijbalk als tijdsplanning */
   .mandje-item .planning-subgroep {
     margin-top: 6px;
     padding: 6px 8px;
-    background: var(--bg);
+    background: rgba(255,255,255,0.06);
     border-radius: 6px;
   }
-  .planning-tijd { font-weight: 700; color: var(--paars); font-size: 0.92rem; }
-  .planning-regel { font-size: 0.8rem; color: #555; margin-top: 1px; }
-  .deelgroep-label { font-weight: 400; color: #888; font-size: 0.78rem; }
-  .planning-prijs { margin-top: 6px; font-size: 0.85rem; color: var(--accent); font-weight: 600; }
+  .planning-tijd { font-weight: 700; color: var(--oranje); font-size: 0.92rem; }
+  .planning-regel { font-size: 0.8rem; color: var(--tekst-gedimd); margin-top: 1px; }
+  .deelgroep-label { font-weight: 400; color: var(--tekst-gedimd); font-size: 0.78rem; }
+  .planning-prijs { margin-top: 6px; font-size: 0.85rem; color: var(--oranje); font-weight: 600; }
 
   .activiteit-tegel.uitgeschakeld {
     cursor: not-allowed;
-    opacity: 0.55;
+    opacity: 0.5;
   }
   .activiteit-tegel.uitgeschakeld:hover { border-color: var(--border); }
 
   .voorstel-groep {
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: 10px;
     padding: 10px 14px;
     margin-top: 8px;
-    background: #fafafa;
+    background: var(--paars-kaart-licht);
   }
 
   .deelgroep-blok {
@@ -311,10 +377,10 @@
   .deelgroep-blok label.checkboxlabel input { width: auto; }
 
   #resultaat { margin-top: 20px; padding: 14px; border-radius: 8px; }
-  #resultaat.ok { background: #e5f4ee; border: 1px solid #9fd3bf; }
-  #resultaat.fout { background: #fbeaea; border: 1px solid #e5a9a9; }
-  .hint { font-size: 0.85rem; color: #888; margin-top: 6px; }
-  .foutmelding { font-size: 0.9rem; color: #b33; margin-top: 8px; }
+  #resultaat.ok { background: rgba(78, 201, 155, 0.15); border: 1px solid #4ec99b; }
+  #resultaat.fout { background: rgba(255, 107, 107, 0.15); border: 1px solid #ff6b6b; }
+  .hint { font-size: 0.85rem; color: var(--tekst-gedimd); margin-top: 6px; }
+  .foutmelding { font-size: 0.9rem; color: #ff8a8a; margin-top: 8px; }
 </style>
 </head>
 <body>
@@ -770,11 +836,19 @@
           prijsHtml = p.prijs_fout ? 'prijs kon niet opgehaald worden' : 'prijs onbekend';
         }
         const klasse = nietBeschikbaar ? 'activiteit-tegel uitgeschakeld' : 'activiteit-tegel';
+        // Echte productfoto uit Recras, als die er is; anders gewoon geen
+        // foto i.p.v. een kapot plaatje (onerror verwijdert de <img> zelf).
+        const fotoHtml = p.afbeelding_url
+          ? `<img class="foto" src="${p.afbeelding_url}" alt="" loading="lazy" onerror="this.remove()">`
+          : '';
         return `
           <button type="button" class="${klasse}" data-slug="${p.slug}" ${nietBeschikbaar ? 'data-uitgeschakeld="true"' : ''}>
-            <div class="naam">${p.naam}</div>
-            <div class="details">${p.duur_minuten ? p.duur_minuten + ' min' : ''}${p.eenheid_naam ? ' &middot; per ' + p.eenheid_naam : ''}</div>
-            <div class="prijs">${prijsHtml}</div>
+            ${fotoHtml}
+            <div class="tegel-inhoud">
+              <div class="naam">${p.naam}</div>
+              <div class="details">${p.duur_minuten ? p.duur_minuten + ' min' : ''}${p.eenheid_naam ? ' &middot; per ' + p.eenheid_naam : ''}</div>
+              <div class="prijs">${prijsHtml}</div>
+            </div>
           </button>
         `;
       })
@@ -883,6 +957,31 @@
       .join(', ');
   }
 
+  // Live capaciteit-tekst per moment, zoals op het voorbeeldscherm ("3 banen
+  // vrij", "6 plekken vrij", "Vol").
+  function bepaalCapaciteitTekst(optie, eenheidNaam) {
+    if (optie.beschikbaar === false) return 'Vol';
+    if (eenheidNaam) {
+      const n = optie.eenhedenBeschikbaar;
+      return `${n} ${eenheidMeervoud(eenheidNaam, n)} vrij`;
+    }
+    return `${optie.personenCapaciteit} plekken vrij`;
+  }
+
+  // Kleine oranje badge zoals "BIJNA VOL!"/"LAATSTE BAAN!" op het
+  // voorbeeldscherm, op basis van hoeveel er nog vrij is (los van wat de
+  // huidige aanvraag nodig heeft).
+  function bepaalBadge(optie, eenheidNaam) {
+    if (optie.beschikbaar === false) return null;
+    if (eenheidNaam) {
+      if (optie.eenhedenBeschikbaar === 1) return `Laatste ${eenheidNaam}!`;
+      if (optie.eenhedenBeschikbaar === 2) return 'Bijna vol!';
+      return null;
+    }
+    if (optie.personenCapaciteit != null && optie.personenCapaciteit <= 3) return 'Bijna vol!';
+    return null;
+  }
+
   // Bouwt de HTML voor een lijst tijd-slots. Niet-beschikbare (volgeboekte)
   // tijden worden grijs en niet-klikbaar getoond (in plaats van weggelaten).
   // Tijden die op zich beschikbaar zijn, maar overlappen met een andere
@@ -896,9 +995,6 @@
     const eenheidNaam = huidigProduct()?.eenheid_naam;
     return opties
       .map((optie) => {
-        const eenhedenLabel = eenheidNaam && optie.eenhedenNodig
-          ? ` (${optie.eenhedenNodig} ${eenheidMeervoud(eenheidNaam, optie.eenhedenNodig)})`
-          : '';
         const isConflict = optie.beschikbaar !== false && optie.conflict === true;
         let klasse = 'slot';
         if (optie.beschikbaar === false) klasse += ' disabled';
@@ -915,7 +1011,11 @@
           ? ` data-overlap-items="${JSON.stringify(overlapItems).replace(/"/g, '&quot;')}"`
           : '';
 
-        return `<div class="${klasse}" data-moment="${optie.startmoment}" data-beschikbaar="${optie.beschikbaar !== false}" data-conflict="${isConflict}"${tooltipAttr}${overlapData}>${tijdNotatie(optie.startmoment)}${eenhedenLabel}</div>`;
+        const capaciteitTekst = bepaalCapaciteitTekst(optie, eenheidNaam);
+        const badgeTekst = !isConflict ? bepaalBadge(optie, eenheidNaam) : null;
+        const badgeHtml = badgeTekst ? `<div class="slot-badge">${badgeTekst}</div>` : '';
+
+        return `<div class="${klasse}" data-moment="${optie.startmoment}" data-beschikbaar="${optie.beschikbaar !== false}" data-conflict="${isConflict}"${tooltipAttr}${overlapData}><div class="slot-tijd">${tijdNotatie(optie.startmoment)}</div><div class="slot-detail">${capaciteitTekst}</div>${badgeHtml}</div>`;
       })
       .join('');
   }

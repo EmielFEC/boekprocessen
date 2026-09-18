@@ -318,13 +318,23 @@ Twee dingen zijn hiermee bevestigd:
   geheugen van 1 serverinstantie. Prima voor testen; bij meer verkeer of
   meerdere serverinstanties (Render kan opschalen) moet dit naar een
   gedeelde opslag (bijv. Redis) verhuizen.
-- **Huisstijl toegepast, maar niet compleet.** Kleuren (paars `#2c1d49`,
-  oranje `#f39313`, beige `#f2ede7`) en het lettertype Rubik (via Google
-  Fonts) zitten er nu in. Het handschrift-achtige weergavelettertype
-  "Mascot MVB" uit de screenshot is een eigen/betaald font en dus niet via
-  Google Fonts te laden - stuur het font-bestand (.woff2/.otf/.ttf) door als
-  je dat ook in dit boekproces wilt gebruiken (bijv. voor koppen), dan voeg
-  ik het toe via `@font-face`.
+- **Huisstijl toegepast, met paars nu als dominante kleur** (op verzoek, met
+  een display-bord-screenshot als vormgevingsvoorbeeld). De pagina-
+  achtergrond en alle kaarten/tegels zijn nu donkerpaars (`--paars-donker`/
+  `--paars-kaart`), met oranje (`#f39313`) als accentkleur voor knoppen,
+  badges en prijzen - net als op het voorbeeldscherm. Tijdstip-knoppen tonen
+  nu ook live vrije capaciteit ("3 banen vrij", "6 plekken vrij") en een
+  oranje badge bij weinig ruimte ("Bijna vol!", "Laatste baan!"), en
+  activiteitentegels tonen (indien beschikbaar) de echte productfoto uit
+  Recras (`afbeelding_href`/`boekproces_afbeelding_href`, met een stille
+  fallback naar geen foto als het laden mislukt). Het lettertype Rubik (via
+  Google Fonts) staat nog voor lopende tekst; voor koppen en activiteit-
+  namen is er nu een schreef-/scriptlettertype ("Caveat", ook via Google
+  Fonts) als TIJDELIJKE vervanger van het handschrift-achtige "Mascot MVB"
+  uit de eerdere screenshot - dat is een eigen/betaald font en dus niet via
+  Google Fonts te laden. Stuur het font-bestand (.woff2/.otf/.ttf) door
+  zodra je dat wilt gebruiken, dan vervang ik "Caveat" door `@font-face`
+  met het echte font.
 - **Mobielvriendelijkheid** is met de huidige CSS redelijk basaal geregeld
   (tegels/mandje passen zich aan), maar nog niet echt getest/verfijnd op
   telefoonformaat - moet nog een aparte ronde krijgen zodra de rest staat.

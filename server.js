@@ -199,6 +199,11 @@ app.get('/api/producten', async (req, res) => {
         console.error(`[prijs] ${slug} (product ${p.product_id}):`, err.message, err.details ?? '');
       }
 
+      // Komt uit dezelfde (gecachete) productdata als de prijs, dus geen
+      // extra Recras-call. Geeft null bij een producttype zonder afbeelding
+      // of als het ophalen mislukt - de tegel toont dan gewoon geen foto.
+      const afbeelding_url = await recras.haalAfbeeldingUrl(p.product_id);
+
       let heeftStartmomenten = null;
       let vandaagVol = null;
       if (mandje) {
@@ -219,6 +224,7 @@ app.get('/api/producten', async (req, res) => {
         eenheid_naam: p.eenheid_naam,
         prijs_type: p.prijs_type || 'per_persoon',
         toestaan_deelgroep: p.toestaan_deelgroep,
+        afbeelding_url,
         prijs_per_persoon,
         prijs_fout,
         heeftStartmomenten,

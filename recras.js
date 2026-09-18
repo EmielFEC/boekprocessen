@@ -76,10 +76,22 @@ async function haalProduct(productId) {
   return data;
 }
 
-// Kleine cache (5 minuten) zodat we niet bij elke paginalading van de
-// activiteitenpagina alle producten opnieuw ophalen bij Recras.
-const prijsCache = new Map(); // productId -> { prijs, opgehaaldOp }
-const PRIJS_CACHE_MS = 5 * 60 * 1000;
+// Kleine cache (5 minuten) op het RUWE product, zodat we niet bij elke
+// paginalading van de activiteitenpagina alle producten opnieuw ophalen bij
+// Recras - en zodat prijs én afbeelding uit dezelfde opgehaalde data komen
+// i.p.v. 2x hetzelfde product te fetchen.
+const productCache = new Map(); // productId -> { product, opgehaaldOp }
+const PRODUCT_CACHE_MS = 5 * 60 * 1000;
+
+async function haalProductGecached(productId) {
+  const cached = productCache.get(productId);
+  if (cached && Date.now() - cached.opgehaaldOp < PRODUCT_CACHE_MS) {
+    return cached.product;
+  }
+  const product = await haalProduct(productId);
+  productCache.set(productId, { product, opgehaaldOp: Date.now() });
+  return product;
+}
 
 /**
  * Bepaalt de prijs per persoon (of per eenheid, zie prijs_type in
@@ -95,12 +107,7 @@ const PRIJS_CACHE_MS = 5 * 60 * 1000;
  * dient alleen als fallback als `ProductPrice` onverhoopt ontbreekt.
  */
 async function haalPrijsPerPersoon(productId) {
-  const cached = prijsCache.get(productId);
-  if (cached && Date.now() - cached.opgehaaldOp < PRIJS_CACHE_MS) {
-    return cached.prijs;
-  }
-
-  const product = await haalProduct(productId);
+  const product = await haalProductGecached(productId);
   const eerstePrijsregel = Array.isArray(product?.ProductPrice) ? product.ProductPrice[0] : null;
 
   let verkoopExclBtw = eerstePrijsregel?.verkoop ?? product?.verkoop;
@@ -127,12 +134,25 @@ async function haalPrijsPerPersoon(productId) {
   }
 
   const basis = typeof verkoopExclBtw === 'string' ? parseFloat(verkoopExclBtw) : verkoopExclBtw;
-  const prijs = btwPercentage != null
+  return btwPercentage != null
     ? Math.round(basis * (1 + btwPercentage / 100) * 100) / 100
     : basis;
+}
 
-  prijsCache.set(productId, { prijs, opgehaaldOp: Date.now() });
-  return prijs;
+/**
+ * Haalt de afbeelding-URL van een product op (voor de activiteitentegel),
+ * uit dezelfde (gecachete) productdata als de prijs - dus geen extra
+ * Recras-call als de prijs al net is opgehaald. Geeft `null` terug als er
+ * geen afbeelding is (of het ophalen mislukt) - de frontend toont dan
+ * gewoon geen foto i.p.v. een kapot plaatje.
+ */
+async function haalAfbeeldingUrl(productId) {
+  try {
+    const product = await haalProductGecached(productId);
+    return product?.boekproces_afbeelding_href || product?.afbeelding_href || null;
+  } catch (err) {
+    return null;
+  }
 }
 
 /**
@@ -270,6 +290,7 @@ module.exports = {
   getBeschikbaarheid,
   haalProduct,
   haalPrijsPerPersoon,
+  haalAfbeeldingUrl,
   listRecenteBoekingen,
   vindOfMaakKlant,
   maakCombinatieBoeking,
