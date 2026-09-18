@@ -254,6 +254,7 @@ app.get('/api/dagen-beschikbaarheid', async (req, res) => {
   );
 
   const dagenMetCapaciteit = new Set();
+  let aantalMislukt = 0;
 
   await Promise.all(
     actieveProducten.map(async ([slug, p]) => {
@@ -266,10 +267,21 @@ app.get('/api/dagen-beschikbaarheid', async (req, res) => {
           }
         });
       } catch (err) {
-        console.error(`[dagen-beschikbaarheid] ${slug}:`, err.message);
+        aantalMislukt += 1;
+        console.error(`[dagen-beschikbaarheid] ${slug}:`, err.message, err.details ?? '');
       }
     })
   );
+
+  // Als het ophalen voor ALLE actieve producten mislukte (bijv. Recras
+  // tijdelijk niet bereikbaar), geven we een fout terug i.p.v. een lege set:
+  // een lege set zou de frontend laten denken dat ELKE dag in dit bereik
+  // geen enkele capaciteit heeft (dus alles grijs), terwijl we dat in
+  // werkelijkheid gewoon niet konden vaststellen. De frontend valt bij een
+  // fout "fail-open" terug (geen dagen grijzen) i.p.v. onterecht te blokkeren.
+  if (actieveProducten.length > 0 && aantalMislukt === actieveProducten.length) {
+    return res.status(502).json({ error: 'Kon beschikbaarheid niet ophalen bij Recras' });
+  }
 
   res.json({ dagenMetCapaciteit: [...dagenMetCapaciteit].sort() });
 });
@@ -601,7 +613,7 @@ app.post('/api/mandje/:mandjeId/boeken', async (req, res) => {
     const boeking = await recras.maakCombinatieBoeking({
       klant_id: klantData.id,
       regels,
-      status: 'bevestigd',
+      status: 'definitief',
       bijzonderheden,
     });
 

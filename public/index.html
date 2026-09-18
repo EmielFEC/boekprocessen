@@ -6,8 +6,16 @@
 <title>Boekproces - FEC Sevenum</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600;700&family=Caveat:wght@600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
+  /* Eigen huisstijl-lettertype, gebruikt voor de grote schermtitels. */
+  @font-face {
+    font-family: "Mascot MVB";
+    src: url("/fonts/MVB-Mascot.otf") format("opentype");
+    font-weight: normal;
+    font-style: normal;
+    font-display: swap;
+  }
   :root {
     /* FEC Sevenum huisstijl - paars nu als dominante kleur (zie voorbeeldscherm) */
     --paars: #2c1d49;
@@ -21,10 +29,9 @@
     --tekst: var(--beige);
     --tekst-gedimd: #c6b9de;
     --border: rgba(255, 255, 255, 0.12);
-    /* Script/weergavelettertype "Caveat" is een tijdelijk vervangfont voor
-       "Mascot MVB" (een eigen/betaald font dat niet via Google Fonts te
-       laden is) - vervang zodra het echte font-bestand beschikbaar is. */
-    --font-display: "Caveat", "Rubik", cursive;
+    /* Alleen voor de grote schermtitels (h1 / h2.schermtitel) - alle overige
+       tekst gebruikt gewoon Rubik (evt. in het oranje). */
+    --font-display: "Mascot MVB", "Rubik", cursive;
   }
   * { box-sizing: border-box; }
   body {
@@ -36,18 +43,20 @@
   }
   h1 {
     font-family: var(--font-display);
-    font-size: 2.4rem;
-    line-height: 1;
+    font-size: 2.6rem;
+    line-height: 1.15;
     margin: 0 0 4px;
-    color: var(--oranje);
+    color: #fff;
+    text-shadow: 2px 2px 0 var(--oranje);
     font-weight: 700;
   }
   h2.schermtitel {
     font-family: var(--font-display);
-    font-size: 1.7rem;
-    line-height: 1;
+    font-size: 1.9rem;
+    line-height: 1.15;
     margin: 0 0 6px;
-    color: var(--oranje);
+    color: #fff;
+    text-shadow: 2px 2px 0 var(--oranje);
     font-weight: 700;
   }
   p.subtitle { color: var(--tekst-gedimd); margin-top: 0; margin-bottom: 24px; }
@@ -56,7 +65,7 @@
     max-width: 960px;
     margin: 0 auto;
     display: flex;
-    flex-wrap: wrap-reverse;
+    flex-wrap: wrap;
     gap: 24px;
     align-items: flex-start;
   }
@@ -64,14 +73,17 @@
   .zijbalk {
     flex: 1 1 260px;
     min-width: 240px;
+    align-self: flex-start;
     position: sticky;
     top: 24px;
+    max-height: calc(100vh - 48px);
+    overflow-y: auto;
     border: 1px solid var(--border);
     border-radius: 10px;
     padding: 16px;
     background: var(--paars-kaart);
   }
-  .zijbalk h2 { font-family: var(--font-display); font-size: 1.6rem; margin: 0 0 12px; color: var(--oranje); }
+  .zijbalk h2 { font-family: "Rubik", sans-serif; font-size: 1.3rem; margin: 0 0 12px; color: var(--oranje); font-weight: 700; }
   .zijbalk .bezoekinfo { font-size: 0.85rem; color: var(--tekst-gedimd); margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
   .mandje-item {
     padding: 10px 0;
@@ -80,7 +92,7 @@
   }
   .mandje-item:last-of-type { border-bottom: none; }
   .mandje-item .regelkop { display: flex; justify-content: space-between; align-items: center; }
-  .mandje-item .regelkop strong { font-family: var(--font-display); font-size: 1.2rem; color: var(--beige); font-weight: 700; }
+  .mandje-item .regelkop strong { font-family: "Rubik", sans-serif; font-size: 1rem; color: var(--oranje); font-weight: 700; }
   .mandje-item .verwijder {
     background: none; border: none; color: #f0a; cursor: pointer; padding: 0 0 0 8px; margin: 0; font-size: 0.85rem;
     color: #ff8a8a;
@@ -133,9 +145,15 @@
 
   .activiteiten-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    grid-template-columns: repeat(3, 1fr);
     gap: 14px;
     margin: 12px 0 24px;
+  }
+  @media (max-width: 640px) {
+    .activiteiten-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (max-width: 420px) {
+    .activiteiten-grid { grid-template-columns: 1fr; }
   }
   .activiteit-tegel {
     border: 1px solid var(--border);
@@ -151,13 +169,13 @@
   .activiteit-tegel:hover { border-color: var(--accent); }
   .activiteit-tegel .foto {
     width: 100%;
-    height: 100px;
+    aspect-ratio: 1 / 1;
     object-fit: cover;
     display: block;
     background: var(--paars-kaart-licht);
   }
-  .activiteit-tegel .tegel-inhoud { padding: 12px 14px 0; }
-  .activiteit-tegel .naam { font-family: var(--font-display); font-weight: 700; color: var(--oranje); font-size: 1.4rem; line-height: 1.1; }
+  .activiteit-tegel .tegel-inhoud { padding: 10px 12px 0; }
+  .activiteit-tegel .naam { font-family: "Rubik", sans-serif; font-weight: 700; color: var(--oranje); font-size: 1.1rem; line-height: 1.2; }
   .activiteit-tegel .details { color: var(--tekst-gedimd); font-size: 0.85rem; margin-top: 4px; }
   .activiteit-tegel .prijs {
     display: inline-block;
@@ -178,7 +196,7 @@
     font-size: 0.9rem;
     margin-bottom: 20px;
   }
-  .sectiekop { font-family: var(--font-display); font-weight: 700; margin: 24px 0 4px; font-size: 1.4rem; color: var(--oranje); }
+  .sectiekop { font-family: "Rubik", sans-serif; font-weight: 700; margin: 24px 0 4px; font-size: 1.15rem; color: var(--oranje); }
 
   .slots {
     display: flex;
@@ -188,29 +206,19 @@
   }
   .slot {
     position: relative;
+    box-sizing: border-box;
     border: 1px solid var(--border);
     border-radius: 12px;
-    padding: 8px 16px;
+    padding: 8px 4px;
     cursor: pointer;
     font-size: 0.9rem;
     background: var(--paars-kaart-licht);
     color: var(--tekst);
     text-align: center;
-    min-width: 84px;
+    width: 108px;
   }
   .slot-tijd { font-weight: 700; font-size: 1rem; }
   .slot-detail { font-size: 0.72rem; color: var(--tekst-gedimd); margin-top: 2px; }
-  .slot-badge {
-    display: inline-block;
-    margin-top: 4px;
-    padding: 2px 8px;
-    border-radius: 10px;
-    font-size: 0.65rem;
-    font-weight: 700;
-    letter-spacing: 0.02em;
-    background: var(--accent);
-    color: white;
-  }
   .slot:hover { border-color: var(--accent); }
   .slot.selected { background: var(--accent); color: white; border-color: var(--accent); }
   .slot.selected .slot-detail { color: rgba(255,255,255,0.85); }
@@ -578,12 +586,26 @@
   // grijs/niet-klikbaar getoond (los van het gekozen aantal personen - dat
   // wordt pas per activiteit exact gecheckt).
   // ---------------------------------------------------------------------
-  let kalenderMaand = null; // Date, altijd op de 1e van de maand
+  let kalenderMaand = null; // Date, altijd op de 1e van de maand (LOKALE tijd)
   let kalenderGeselecteerdeDatum = null;
-  const dagenMetCapaciteitCache = new Map(); // 'YYYY-MM' -> Set('YYYY-MM-DD')
+  const dagenMetCapaciteitCache = new Map(); // 'YYYY-MM' -> Set('YYYY-MM-DD') | null (null = onbekend/fout, fail-open)
+
+  // Formatteert een Date als YYYY-MM-DD in LOKALE tijd. BELANGRIJK: gebruik
+  // hiervoor NOOIT `date.toISOString().slice(0,10)` - dat rekent eerst om
+  // naar UTC, en met de Nederlandse tijdzone (UTC+1/+2) levert dat voor een
+  // lokale middernacht de VORIGE dag op (bijv. maandag 16 nov geselecteerd
+  // -> toISOString() geeft "...-11-15"). Dit veroorzaakte zowel het
+  // "verkeerde dag geselecteerd"-probleem als (deels) het probleem dat de
+  // huidige maand geen beschikbare dagen leek te hebben.
+  function ymdLocal(date) {
+    const jaar = date.getFullYear();
+    const maand = String(date.getMonth() + 1).padStart(2, '0');
+    const dag = String(date.getDate()).padStart(2, '0');
+    return `${jaar}-${maand}-${dag}`;
+  }
 
   function vandaagISO() {
-    return new Date().toISOString().slice(0, 10);
+    return ymdLocal(new Date());
   }
 
   async function laadDagenBeschikbaarheid(maandStart) {
@@ -591,19 +613,47 @@
     if (dagenMetCapaciteitCache.has(sleutel)) return dagenMetCapaciteitCache.get(sleutel);
 
     const volgendeMaand = new Date(maandStart.getFullYear(), maandStart.getMonth() + 1, 1);
-    const vanaf = maandStart.toISOString().slice(0, 10);
-    const tot = volgendeMaand.toISOString().slice(0, 10);
+
+    // Nooit beschikbaarheid opvragen voor dagen die al voorbij zijn: die
+    // kunnen toch niet meer geboekt worden, en sommige (huidige) maanden
+    // beginnen deels in het verleden. Dit voorkomt zowel nodeloos trage/
+    // grote aanvragen als een leeg/mislukt resultaat voor de lopende maand.
+    const vandaag = vandaagISO();
+    const vanaf = ymdLocal(maandStart) < vandaag ? vandaag : ymdLocal(maandStart);
+    const tot = ymdLocal(volgendeMaand);
+
+    if (vanaf >= tot) {
+      // De hele maand ligt al in het verleden - niets op te halen.
+      dagenMetCapaciteitCache.set(sleutel, new Set());
+      return new Set();
+    }
 
     let set;
     try {
       const res = await fetch(`/api/dagen-beschikbaarheid?vanaf=${vanaf}&tot=${tot}`);
       const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Kon beschikbaarheid niet ophalen');
       set = new Set(data.dagenMetCapaciteit || []);
     } catch (err) {
       set = null; // bij fout: fail-open, geen dagen grijzen i.p.v. de klant blokkeren
     }
+    // Een fail-open resultaat (null) bewust NIET cachen, zodat een volgende
+    // poging (bijv. na een tijdelijke Recras-storing) het gewoon opnieuw
+    // probeert i.p.v. voorgoed "onbekend" te blijven.
     if (set) dagenMetCapaciteitCache.set(sleutel, set);
     return set;
+  }
+
+  // Haalt (ongevraagd, op de achtergrond) de beschikbaarheid van de vorige en
+  // volgende maand alvast op, zodat doorklikken in de kalender niet elke
+  // keer opnieuw hoeft te wachten - dat opvragen van een hele maand kan bij
+  // Recras merkbaar traag zijn, dus dit verbergt die vertraging zoveel
+  // mogelijk achter de tijd die de klant al op de huidige maand kijkt.
+  function prefetchBuurmaanden(maandStart) {
+    const vorige = new Date(maandStart.getFullYear(), maandStart.getMonth() - 1, 1);
+    const volgende = new Date(maandStart.getFullYear(), maandStart.getMonth() + 1, 1);
+    laadDagenBeschikbaarheid(vorige);
+    laadDagenBeschikbaarheid(volgende);
   }
 
   async function renderKalender() {
@@ -611,7 +661,10 @@
       kalenderMaand.toLocaleDateString('nl-NL', { month: 'long', year: 'numeric' });
 
     const grid = document.getElementById('kalGrid');
-    grid.innerHTML = '<p class="hint">Bezig met laden...</p>';
+    const sleutel = `${kalenderMaand.getFullYear()}-${String(kalenderMaand.getMonth() + 1).padStart(2, '0')}`;
+    if (!dagenMetCapaciteitCache.has(sleutel)) {
+      grid.innerHTML = '<p class="hint">Bezig met laden...</p>';
+    }
 
     const dagenMetCapaciteit = await laadDagenBeschikbaarheid(kalenderMaand);
 
@@ -624,7 +677,7 @@
 
     for (let dag = 1; dag <= laatsteDagVanMaand; dag++) {
       const datumObj = new Date(kalenderMaand.getFullYear(), kalenderMaand.getMonth(), dag);
-      const iso = datumObj.toISOString().slice(0, 10);
+      const iso = ymdLocal(datumObj);
       const isVerleden = iso < vandaagISO();
       const heeftNiks = !isVerleden && dagenMetCapaciteit && !dagenMetCapaciteit.has(iso);
       const isGeselecteerd = iso === kalenderGeselecteerdeDatum;
@@ -644,6 +697,8 @@
         renderKalender();
       });
     });
+
+    prefetchBuurmaanden(kalenderMaand);
   }
 
   document.getElementById('kalPrevBtn').addEventListener('click', () => {
@@ -687,7 +742,7 @@
     }
     const morgen = new Date();
     morgen.setDate(morgen.getDate() + 1);
-    initKalender(morgen.toISOString().slice(0, 10));
+    initKalender(ymdLocal(morgen));
     toonScherm('schermA');
   }
 
@@ -968,20 +1023,6 @@
     return `${optie.personenCapaciteit} plekken vrij`;
   }
 
-  // Kleine oranje badge zoals "BIJNA VOL!"/"LAATSTE BAAN!" op het
-  // voorbeeldscherm, op basis van hoeveel er nog vrij is (los van wat de
-  // huidige aanvraag nodig heeft).
-  function bepaalBadge(optie, eenheidNaam) {
-    if (optie.beschikbaar === false) return null;
-    if (eenheidNaam) {
-      if (optie.eenhedenBeschikbaar === 1) return `Laatste ${eenheidNaam}!`;
-      if (optie.eenhedenBeschikbaar === 2) return 'Bijna vol!';
-      return null;
-    }
-    if (optie.personenCapaciteit != null && optie.personenCapaciteit <= 3) return 'Bijna vol!';
-    return null;
-  }
-
   // Bouwt de HTML voor een lijst tijd-slots. Niet-beschikbare (volgeboekte)
   // tijden worden grijs en niet-klikbaar getoond (in plaats van weggelaten).
   // Tijden die op zich beschikbaar zijn, maar overlappen met een andere
@@ -1012,20 +1053,22 @@
           : '';
 
         const capaciteitTekst = bepaalCapaciteitTekst(optie, eenheidNaam);
-        const badgeTekst = !isConflict ? bepaalBadge(optie, eenheidNaam) : null;
-        const badgeHtml = badgeTekst ? `<div class="slot-badge">${badgeTekst}</div>` : '';
 
-        return `<div class="${klasse}" data-moment="${optie.startmoment}" data-beschikbaar="${optie.beschikbaar !== false}" data-conflict="${isConflict}"${tooltipAttr}${overlapData}><div class="slot-tijd">${tijdNotatie(optie.startmoment)}</div><div class="slot-detail">${capaciteitTekst}</div>${badgeHtml}</div>`;
+        return `<div class="${klasse}" data-moment="${optie.startmoment}" data-beschikbaar="${optie.beschikbaar !== false}" data-conflict="${isConflict}"${tooltipAttr}${overlapData}><div class="slot-tijd">${tijdNotatie(optie.startmoment)}</div><div class="slot-detail">${capaciteitTekst}</div></div>`;
       })
       .join('');
   }
 
   // Klik op een rood-omlijnd conflict-slot: de klant kiest ervoor om de
-  // conflicterende activiteit(en) uit de planning te halen, waarna die
-  // activiteit direct geopend wordt zodat er een nieuwe tijd gekozen kan
-  // worden - in plaats van dit moment te selecteren voor de huidige
-  // activiteit.
-  async function klikOpConflictSlot(el) {
+  // conflicterende activiteit(en) uit de planning te halen, waarna DIT
+  // moment (waar de klant op klikte) alsnog voor de HUIDIGE activiteit
+  // gekozen/toegevoegd wordt - in plaats van de klant naar de verwijderde
+  // activiteit toe te sturen om die opnieuw in te plannen (waardoor de
+  // oorspronkelijk gekozen activiteit/tijd verloren ging).
+  // `modus`: 'enkel' (1 moment volstaat, meteen toevoegen) of 'kiesStart'
+  // (dit is de starttijd van de eerste subgroep bij een gesplitste boeking -
+  // ga verder met het vervolgschema, net als bij een normale klik).
+  async function klikOpConflictSlot(el, modus) {
     let overlapItems = [];
     try {
       overlapItems = JSON.parse(el.dataset.overlapItems || '[]');
@@ -1050,7 +1093,13 @@
     renderZijbalk();
     renderActiviteitenKnop();
 
-    openActiviteit(overlapItems[0].slug);
+    const gekozenMoment = el.dataset.moment;
+    if (modus === 'kiesStart') {
+      await haalVervolgSchemaOp(gekozenMoment);
+    } else {
+      gekozenGroepen = [{ aantal: huidigDeelgroepAantal, begin: gekozenMoment }];
+      await voegToeAanMandje();
+    }
   }
 
   function renderPlan(plan) {
@@ -1085,7 +1134,7 @@
       });
     });
     planResultaat.querySelectorAll('.slot.conflict').forEach((el) => {
-      el.addEventListener('click', () => klikOpConflictSlot(el));
+      el.addEventListener('click', () => klikOpConflictSlot(el, 'enkel'));
     });
   }
 
@@ -1101,7 +1150,7 @@
       el.addEventListener('click', () => haalVervolgSchemaOp(el.dataset.moment));
     });
     planResultaat.querySelectorAll('.slot.conflict').forEach((el) => {
-      el.addEventListener('click', () => klikOpConflictSlot(el));
+      el.addEventListener('click', () => klikOpConflictSlot(el, 'kiesStart'));
     });
   }
 

@@ -95,37 +95,34 @@ async function haalProductGecached(productId) {
 
 /**
  * Bepaalt de prijs per persoon (of per eenheid, zie prijs_type in
- * products.json) van een product, live uit Recras, INCLUSIEF btw (het
- * bedrag dat aan de klant getoond hoort te worden).
+ * products.json) van een product, live uit Recras.
  *
- * Bevestigd tegen echte productdata (product 194, Bowling):
- *   "ProductPrice": [{ "btw": 9, "verkoop": 34.5 }], "verkoop": 34.5
- * Het top-level `verkoop`-veld is een kopie van de eerste (standaard)
- * prijsregel in `ProductPrice`, en is EXCLUSIEF btw. We pakken daarom de
- * eerste `ProductPrice`-regel (voor zowel het bedrag als het btw-
- * percentage) en rekenen zelf incl.-btw uit; `verkoop` op het hoofdniveau
- * dient alleen als fallback als `ProductPrice` onverhoopt ontbreekt.
+ * BEVESTIGD DOOR EMIEL: de prijs die de Recras API teruggeeft (zowel
+ * `ProductPrice[0].verkoop` als het top-level `verkoop`-veld) is al
+ * INCLUSIEF btw - dit is dus meteen het bedrag dat aan de klant getoond
+ * hoort te worden. Eerder rekenden we hier zelf nog een keer btw bovenop,
+ * wat de prijzen dubbel zo hoog (te hoog) maakte - die extra berekening is
+ * verwijderd.
  */
 async function haalPrijsPerPersoon(productId) {
   const product = await haalProductGecached(productId);
   const eerstePrijsregel = Array.isArray(product?.ProductPrice) ? product.ProductPrice[0] : null;
 
-  let verkoopExclBtw = eerstePrijsregel?.verkoop ?? product?.verkoop;
-  const btwPercentage = eerstePrijsregel?.btw;
+  let verkoop = eerstePrijsregel?.verkoop ?? product?.verkoop;
 
-  if (verkoopExclBtw == null) {
+  if (verkoop == null) {
     // Fallback op oudere gok-veldnamen, voor het geval een ander
     // producttype toch een andere vorm blijkt te hebben.
     const mogelijkeVelden = ['verkoopprijs', 'verkoopprijs_incl_btw', 'prijs', 'prijs_incl_btw', 'prijs_per_persoon'];
     for (const veld of mogelijkeVelden) {
       if (product && product[veld] != null && product[veld] !== '') {
-        verkoopExclBtw = product[veld];
+        verkoop = product[veld];
         break;
       }
     }
   }
 
-  if (verkoopExclBtw == null) {
+  if (verkoop == null) {
     const fout = new Error(
       `Kon geen prijsveld vinden op product ${productId} (verwacht: ProductPrice[0].verkoop of verkoop)`
     );
@@ -133,10 +130,7 @@ async function haalPrijsPerPersoon(productId) {
     throw fout;
   }
 
-  const basis = typeof verkoopExclBtw === 'string' ? parseFloat(verkoopExclBtw) : verkoopExclBtw;
-  return btwPercentage != null
-    ? Math.round(basis * (1 + btwPercentage / 100) * 100) / 100
-    : basis;
+  return typeof verkoop === 'string' ? parseFloat(verkoop) : verkoop;
 }
 
 /**
@@ -156,15 +150,19 @@ async function haalAfbeeldingUrl(productId) {
 }
 
 /**
- * TIJDELIJK (debug): haalt een paar recente boekingen op, zodat we bij een
- * bestaande (bijv. via de Recras-widget of het personeelsoverzicht gemaakte)
- * boeking kunnen zien welke waarde het `status`-veld daadwerkelijk heeft -
- * onze eigen `status: 'bevestigd'` werd door Recras afgewezen als ongeldige
- * waarde, dus het juiste label/enum moeten we ergens vandaan halen.
+ * TIJDELIJK (debug): haalt een paar recente boekingen op. Bevestigd door
+ * Emiel (obv een export vanuit Recras): het `status`-veld dat bestaande
+ * boekingen krijgen is de STRING "definitief" (kleine letters) - onze eigen
+ * `status: 'bevestigd'` werd daarom afgewezen. `maakCombinatieBoeking()`
+ * gebruikt inmiddels 'definitief' als default.
+ *
+ * Recras' `/boekingen` endpoint accepteert geen `limit`-query-parameter
+ * (gaf "Could not validate extra field" terug) - we halen daarom gewoon
+ * alles op en knippen zelf af tot `limit` resultaten.
  */
 async function listRecenteBoekingen(limit = 5) {
-  const { data } = await recrasRequest(`/boekingen?limit=${limit}`);
-  return data;
+  const { data } = await recrasRequest('/boekingen');
+  return Array.isArray(data) ? data.slice(0, limit) : data;
 }
 
 /**
@@ -230,7 +228,7 @@ function berekenEind(beginIso, duurMinuten) {
 async function maakCombinatieBoeking({
   klant_id,
   regels,
-  status = 'bevestigd',
+  status = 'definitief',
   bijzonderheden,
 }) {
   if (!Array.isArray(regels) || regels.length === 0) {

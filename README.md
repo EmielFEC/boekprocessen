@@ -247,12 +247,12 @@ Bevestigd tegen echte productdata (Bowling, product 194):
 Twee dingen zijn hiermee bevestigd:
 
 - **Het prijsveld is `ProductPrice[0].verkoop`** (met het top-level
-  `verkoop`-veld als kopie/fallback), **exclusief btw**. `recras.js`
-  (`haalPrijsPerPersoon()`) rekent nu zelf de btw (uit diezelfde
-  `ProductPrice`-regel) erbij op, zodat de klant een prijs INCLUSIEF btw te
-  zien krijgt (34,50 + 9% = 37,61 per baan) - zoals gebruikelijk voor
-  consumentenprijzen. Wil je liever excl.-btw tonen, dan is dat 1 regel
-  aanpassen in `haalPrijsPerPersoon()`.
+  `verkoop`-veld als kopie/fallback), en dit bedrag is **AL INCLUSIEF btw**
+  (bevestigd door Emiel). `recras.js` (`haalPrijsPerPersoon()`) geeft dit
+  bedrag daarom ongewijzigd door. **Let op:** een eerdere versie rekende
+  hier zelf nog een keer btw overheen (in de veronderstelling dat `verkoop`
+  excl. btw was), waardoor klanten een prijs te zien kregen die btw dubbel
+  meetelde (te hoog) - die extra berekening is verwijderd.
 - **Recras' eigen `per_x_personen: 7` bevestigt de eerder aangenomen
   "eenheden i.p.v. personen"-hypothese** voor Bowling: het product is zelf
   al geconfigureerd als "7 personen per eenheid, naar boven afronden" -
@@ -264,15 +264,16 @@ Twee dingen zijn hiermee bevestigd:
   `products.json` op `actief: false` met een `_todo`-veld. Zodra bekend is
   welk product dit is (en of het tijdgebonden is met een startmomentgroep,
   of bijv. per token werkt) kan dit aangezet worden.
-- **Boeking-status "bevestigd" wordt door Recras afgewezen** (`{"field":
-  "status","message":"Invalid.","parameters":{"value":"bevestigd"}}` bij
-  `POST /boekingen`). Het veld zelf klopt, alleen de waarde niet. Een
-  tijdelijke debug-route `GET /api/debug/boekingen?limit=3` haalt een paar
-  bestaande boekingen op (bijv. eerder via de Recras-widget of het
-  personeelsoverzicht gemaakt) - kijk in de output welke waarde het
-  `status`-veld daar heeft en geef die door, dan passen we
-  `maakCombinatieBoeking()` in `recras.js` aan. **Dit blokkeert op dit
-  moment het daadwerkelijk aanmaken van een boeking.**
+- **OPGELOST: boeking-status.** "bevestigd" werd door Recras afgewezen; via
+  een export van bestaande boekingen (door Emiel aangeleverd) is bevestigd
+  dat de correcte waarde de STRING `"definitief"` (kleine letters) is.
+  `maakCombinatieBoeking()` in `recras.js` gebruikt dit nu als default
+  status, en `server.js` geeft dit ook expliciet mee bij
+  `POST /api/mandje/:mandjeId/boeken`. De tijdelijke debug-route
+  `GET /api/debug/boekingen?limit=` bleek zelf ook een bug te hebben: Recras'
+  `/boekingen`-endpoint accepteert geen `limit`-query-parameter (gaf "Could
+  not validate extra field" terug) - `listRecenteBoekingen()` haalt nu alle
+  boekingen op en knipt zelf af tot `limit` resultaten.
 - **"Eenheden i.p.v. personen"-aanname bij Bowling** is bevestigd, zie
   "Prijzen: bevestigde vorm en btw" hierboven. Voor **X-Cube** is dezelfde
   aanname nog niet met live data bevestigd (en Recras leek op enig moment 3
@@ -321,20 +322,23 @@ Twee dingen zijn hiermee bevestigd:
 - **Huisstijl toegepast, met paars nu als dominante kleur** (op verzoek, met
   een display-bord-screenshot als vormgevingsvoorbeeld). De pagina-
   achtergrond en alle kaarten/tegels zijn nu donkerpaars (`--paars-donker`/
-  `--paars-kaart`), met oranje (`#f39313`) als accentkleur voor knoppen,
-  badges en prijzen - net als op het voorbeeldscherm. Tijdstip-knoppen tonen
-  nu ook live vrije capaciteit ("3 banen vrij", "6 plekken vrij") en een
-  oranje badge bij weinig ruimte ("Bijna vol!", "Laatste baan!"), en
-  activiteitentegels tonen (indien beschikbaar) de echte productfoto uit
-  Recras (`afbeelding_href`/`boekproces_afbeelding_href`, met een stille
-  fallback naar geen foto als het laden mislukt). Het lettertype Rubik (via
-  Google Fonts) staat nog voor lopende tekst; voor koppen en activiteit-
-  namen is er nu een schreef-/scriptlettertype ("Caveat", ook via Google
-  Fonts) als TIJDELIJKE vervanger van het handschrift-achtige "Mascot MVB"
-  uit de eerdere screenshot - dat is een eigen/betaald font en dus niet via
-  Google Fonts te laden. Stuur het font-bestand (.woff2/.otf/.ttf) door
-  zodra je dat wilt gebruiken, dan vervang ik "Caveat" door `@font-face`
-  met het echte font.
+  `--paars-kaart`), met oranje (`#f39313`) als accentkleur voor knoppen en
+  prijzen. Tijdstip-knoppen tonen live vrije capaciteit ("3 banen vrij", "6
+  plekken vrij"; de eerder toegevoegde "Bijna vol!"/"Laatste baan!"-badges
+  zijn op verzoek weer verwijderd - dat was voorlopig te veel). Activiteiten-
+  tegels tonen (indien beschikbaar) de echte productfoto uit Recras
+  (`afbeelding_href`/`boekproces_afbeelding_href`, met een stille fallback
+  naar geen foto als het laden mislukt), nu vierkant (`aspect-ratio: 1/1`)
+  en met 3 activiteiten naast elkaar (`.activiteiten-grid`, met een
+  mobiele fallback naar 2 resp. 1 kolom(men) op kleinere schermen).
+  **Lettertypes:** het echte "Mascot MVB"-fontbestand (`.otf`, door Emiel
+  aangeleverd) staat nu in `public/fonts/MVB-Mascot.otf` en wordt via
+  `@font-face` geladen - dit wordt ALLEEN gebruikt voor de grote
+  schermtitels (`h1`, `h2.schermtitel`), in wit met een oranje
+  slagschaduw (`text-shadow`), zoals gevraagd. Alle overige tekst
+  (activiteitnamen, mandje-item-namen, sectiekoppen, de titel van de
+  zijbalk, enz.) gebruikt gewoon Rubik, met oranje toegestaan als kleur.
+  De eerdere tijdelijke vervanger "Caveat" is hiermee vervallen.
 - **Mobielvriendelijkheid** is met de huidige CSS redelijk basaal geregeld
   (tegels/mandje passen zich aan), maar nog niet echt getest/verfijnd op
   telefoonformaat - moet nog een aparte ronde krijgen zodra de rest staat.
@@ -347,6 +351,28 @@ Twee dingen zijn hiermee bevestigd:
   kijkt nog niet naar het gekozen aantal personen (dat wordt pas per
   activiteit exact gecheckt) - een dag met bijvoorbeeld maar 1 vrije plek
   ergens telt dus al als "wel beschikbaar".
+  - **OPGELOST: tijdzone-bug (verkeerde dag geselecteerd, en de lopende
+    maand leek nergens capaciteit te hebben).** De kalender zette dagen om
+    naar `YYYY-MM-DD` met `date.toISOString().slice(0,10)`. Dat rekent een
+    lokale datum eerst om naar UTC, en met de Nederlandse tijdzone
+    (UTC+1/+2) schuift een lokale middernacht dan naar de VORIGE dag
+    (bijv. "maandag 16 november" werd `2026-11-15`). Alle datum-naar-tekst
+    omzettingen gebruiken nu een nieuwe `ymdLocal()`-helper die met de
+    lokale jaar/maand/dag-onderdelen werkt i.p.v. via UTC om te rekenen.
+    Dit loste ook (een deel van) het probleem op dat de huidige maand
+    (deels al verstreken) leek te laten zien dat er nergens capaciteit was:
+    `laadDagenBeschikbaarheid()` vraagt nu bovendien nooit meer
+    beschikbaarheid op voor dagen die al voorbij zijn (het `vanaf` wordt
+    geclamped op vandaag), en `/api/dagen-beschikbaarheid` geeft een
+    fout-status terug (i.p.v. een misleidende lege lijst) als het ophalen
+    voor ALLE actieve producten mislukt - de kalender grijst dan bewust
+    niets ("fail-open") i.p.v. per ongeluk elke dag te blokkeren.
+  - **Trager laden van een nieuwe maand:** een hele maand beschikbaarheid
+    per product opvragen bij Recras kan merkbaar tijd kosten. Naast de
+    resultaten per maand cachen (zoals al gebeurde) haalt de kalender nu ook
+    steeds de vorige/volgende maand alvast op de achtergrond op zodra een
+    maand getoond is (`prefetchBuurmaanden()`), zodat doorklikken meestal al
+    uit de cache komt in plaats van te moeten wachten.
 - **Eigen pop-up en tooltip i.p.v. de browser-standaard.** De
   bevestigingsvraag bij het oplossen van een tijd-conflict en de melding bij
   een niet meer beschikbaar tijdstip gebruiken nu een eigen modal in
@@ -354,6 +380,29 @@ Twee dingen zijn hiermee bevestigd:
   in plaats van `confirm()`/`alert()`. De hover-uitleg bij een rood
   conflict-tijdstip is een eigen CSS-"spraakballonnetje" (`data-tooltip` +
   `::after`/`::before`) in plaats van de standaard browser-tooltip.
+- **OPGELOST: tijdstip-knoppen sprongen van breedte** (verspringende layout
+  al naargelang de lengte van de capaciteitstekst). `.slot` heeft nu een
+  vaste `width: 108px` i.p.v. een `min-width` die met de inhoud meegroeide.
+- **OPGELOST: klikken op "OK" bij een tijd-conflict voegde de nieuwe
+  activiteit niet toe.** Na het bevestigen dat de conflicterende activiteit
+  verwijderd wordt, stuurde de code de klant naar de VERWIJDERDE activiteit
+  om die opnieuw in te plannen - de oorspronkelijk gekozen activiteit/tijd
+  (waar de klant net op geklikt had) werd daarbij nooit toegevoegd.
+  `klikOpConflictSlot()` rondt nu, na het verwijderen van de conflicterende
+  activiteit(en), de oorspronkelijke actie gewoon af: bij een los moment
+  wordt de nieuwe activiteit direct toegevoegd, bij een gesplitste boeking
+  gaat het vervolgschema gewoon verder vanaf het gekozen startmoment.
+- **OPGELOST: het boekingsoverzicht (zijbalk) stond te ver naar onderen.**
+  `.layout` had `flex-wrap: wrap-reverse` staan (waarschijnlijk ooit bedoeld
+  om de zijbalk op mobiel bovenaan te tonen) - dit blijkt ook de betekenis
+  van `align-items: flex-start` om te draaien (bij `wrap-reverse` betekent
+  "flex-start" de ONDERKANT van de kruisas, niet de bovenkant), waardoor de
+  zijbalk zich aan de onderkant van de (veel langere) activiteitenkolom
+  uitlijnde in plaats van de bovenkant. Nu staat dit gewoon op
+  `flex-wrap: wrap`, waarmee de zijbalk weer normaal bovenaan begint en
+  vervolgens (dankzij `position: sticky; top: 24px`) netjes vlak onder de
+  bovenrand van het scherm blijft hangen terwijl je door de activiteitenlijst
+  scrolt, en meescrollt zodra het einde van die lijst in beeld komt.
 - **Meertaligheid (DE/EN)** komt later; er is nog geen voorbereiding voor
   vertaalde teksten in de code.
 - Annuleren/wijzigen na het boeken, bevestigingsmails en een intern
