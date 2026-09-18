@@ -256,10 +256,43 @@ async function getStartmomentenVoorGroep(groepId, { maxPaginas = 15 } = {}) {
   return { gevonden, paginasDoorlopen, volledigDoorzocht: !pad };
 }
 
+/**
+ * TIJDELIJKE REPARATIE-FUNCTIE. Zet `percentage_materiaal_online_boeking`
+ * op elk startmoment van een groep naar een gekozen waarde (bijv. 100),
+ * zodat we kunnen testen of dit veld inderdaad de online/API-
+ * beschikbaarheid blokkeerde toen het op `null` stond.
+ */
+async function zetOnlinePercentageVoorGroep(groepId, percentage) {
+  const { gevonden } = await getStartmomentenVoorGroep(groepId);
+  const resultaten = [];
+
+  for (const startmoment of gevonden) {
+    const res = await fetch(`${BASE_URL}/startmomenten/${startmoment.id}`, {
+      method: 'PUT',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${RECRAS_TOKEN}`,
+      },
+      body: JSON.stringify({
+        id: startmoment.id,
+        startmomentgroep_id: startmoment.startmomentgroep_id,
+        datetime: startmoment.datetime,
+        percentage_materiaal_online_boeking: percentage,
+      }),
+    });
+    const data = await res.json();
+    resultaten.push({ id: startmoment.id, status: res.status, ok: res.ok, data });
+  }
+
+  return resultaten;
+}
+
 module.exports = {
   getBeschikbaarheid,
   vindOfMaakKlant,
   maakBoeking,
   maakGesplitsteBoeking,
   getStartmomentenVoorGroep,
+  zetOnlinePercentageVoorGroep,
 };

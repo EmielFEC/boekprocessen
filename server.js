@@ -32,6 +32,21 @@ app.get('/api/debug/startmomentgroep/:id', async (req, res) => {
   }
 });
 
+// TIJDELIJKE REPARATIE-ROUTE - zet percentage_materiaal_online_boeking op
+// alle startmomenten van een groep naar een gekozen waarde. Gebruik:
+// POST /api/debug/startmomentgroep/143/zet-percentage  body: { percentage: 100 }
+app.post('/api/debug/startmomentgroep/:id/zet-percentage', async (req, res) => {
+  try {
+    const groepId = parseInt(req.params.id, 10);
+    const percentage = req.body?.percentage ?? 100;
+    const resultaten = await recras.zetOnlinePercentageVoorGroep(groepId, percentage);
+    res.json({ aangepast: resultaten.length, resultaten });
+  } catch (err) {
+    console.error(err);
+    res.status(err.status || 500).json({ error: 'Kon percentage niet aanpassen', details: err.details });
+  }
+});
+
 // Lijst van beschikbare producten/activiteiten voor de frontend (dropdown, etc.)
 app.get('/api/producten', (req, res) => {
   const lijst = Object.entries(products)
