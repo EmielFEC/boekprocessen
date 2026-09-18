@@ -148,12 +148,26 @@ kunt lezen/testen zonder een echte API-verbinding.
    - **Gelijk verdelen** (`verdeel()`) voor pure per-persoon-activiteiten
      (Lasergame, American Golf): de groep wordt zo eerlijk mogelijk over de
      benodigde momenten verdeeld (bijv. 22 -> 8+7+7).
-   - **Max-fill/greedy verdelen** (`verdeelGreedy()`) voor activiteiten die
-     per fysieke eenheid geboekt worden (Bowling, X-Cube, Fun Curling,
-     X-Wall): elk moment wordt zoveel mogelijk gevuld voordat er een nieuw
-     moment bij gepakt wordt (bijv. X-Cube, capaciteit 12 p. per moment: 18
-     -> [12, 6], 19 -> [12, 7]) - dit voorkomt dat een groep onnodig meer
-     eenheden (en dus meer banen/cubes) nodig heeft dan strikt nodig is.
+   - **Verdelen over eenheden** (`verdeelOverEenheden()`) voor activiteiten
+     die per fysieke eenheid geboekt worden (Bowling, X-Cube, Fun Curling,
+     X-Wall). Volgorde (expliciet zo bevestigd door Emiel, na een eerdere
+     "max-fill"-versie die juist ONgelijke groepen opleverde):
+     1. Bereken hoeveel eenheden er in totaal nodig zijn (naar boven
+        afgerond, zoals Recras' eigen `per_x_personen_afronding: boven`).
+     2. Verdeel het totale aantal personen zo GELIJK mogelijk over die
+        eenheden.
+     3. Bundel die gelijk-verdeelde eenheden tot zo min mogelijk, zo vol
+        mogelijke momenten (want er passen maar een beperkt aantal eenheden
+        tegelijk op 1 moment).
+
+     Voorbeeld X-Cube (6 p.p., max. 2 tegelijk -> capaciteit 12 p. per
+     moment): 18 -> eenheden [6,6,6] -> momenten **[12, 6]**; 19 -> eenheden
+     [5,5,5,4] -> momenten **[10, 9]** (beide subgroepen hebben dan 2 cubes
+     nodig - "2x2 X-Cubes"). Voorbeeld X-Wall (8 p.p., maar 1 wall tegelijk
+     -> capaciteit 8 p. per moment): 18 -> eenheden [6,6,6] -> momenten
+     **[6, 6, 6]** (niet het eerder foutieve [8, 8, 2], dat ontstond doordat
+     de oude strategie momenten eerst maximaal probeerde te vullen in plaats
+     van de groep eerlijk over de benodigde eenheden te verdelen).
 4. **Overlap tussen activiteiten**: `annoteerOverlap()` verwijdert GEEN
    startmomenten meer uit de lijst - elk moment blijft zichtbaar en wordt
    geannoteerd met hoeveel personen er dan al (via andere mandje-items)
@@ -202,11 +216,47 @@ kunt lezen/testen zonder een echte API-verbinding.
 8. **Prijs per baan/eenheid vs. per persoon.** Sommige activiteiten worden
    per baan/tafel afgerekend in plaats van per persoon. Dit staat per
    product in `products.json` als `prijs_type: 'per_eenheid'` (bevestigd
-   voor Bowling) of `'per_persoon'` (standaard). Bij `'per_eenheid'`
-   rekent de server de prijs per subgroep uit als (naar boven afgeronde)
-   aantal eenheden × prijs, en telt dat per subgroep op - dus een gesplitste
-   groep kan in totaal meer eenheden kosten dan een ongesplitste, omdat elke
-   subgroep apart afgerond wordt.
+   voor Bowling, Fun Curling en X-Wall) of `'per_persoon'` (standaard, voor
+   Lasergame/American Golf/X-Cube). Bij `'per_eenheid'` rekent de server de
+   prijs per subgroep uit als (naar boven afgeronde) aantal eenheden ×
+   prijs, en telt dat per subgroep op - dus een gesplitste groep kan in
+   totaal meer eenheden kosten dan een ongesplitste, omdat elke subgroep
+   apart afgerond wordt.
+9. **Fysieke bovengrens aan gelijktijdige eenheden.** Sommige producten
+   hebben een harde grens aan hoeveel eenheden er TEGELIJK (op 1 moment)
+   ingezet kunnen worden, die niet vanzelf uit Recras' `beschikbaarheid`
+   blijkt (bijv. X-Cube: max. 2 tegelijk, maar Recras rapporteerde op een
+   moment 3 vrije eenheden). `max_eenheden_per_moment` in `products.json`
+   dwingt dit hard af (`begrensEenheden()` in `server.js`), vóórdat de rest
+   van de planning ermee rekent.
+
+## Prijzen: bevestigde vorm en btw
+
+Bevestigd tegen echte productdata (Bowling, product 194):
+
+```json
+{
+  "ProductPrice": [{ "btw": 9, "verkoop": 34.5 }],
+  "verkoop": 34.5,
+  "aantalbepaling": "per_x_personen",
+  "per_x_personen": 7,
+  "per_x_personen_afronding": "boven"
+}
+```
+
+Twee dingen zijn hiermee bevestigd:
+
+- **Het prijsveld is `ProductPrice[0].verkoop`** (met het top-level
+  `verkoop`-veld als kopie/fallback), **exclusief btw**. `recras.js`
+  (`haalPrijsPerPersoon()`) rekent nu zelf de btw (uit diezelfde
+  `ProductPrice`-regel) erbij op, zodat de klant een prijs INCLUSIEF btw te
+  zien krijgt (34,50 + 9% = 37,61 per baan) - zoals gebruikelijk voor
+  consumentenprijzen. Wil je liever excl.-btw tonen, dan is dat 1 regel
+  aanpassen in `haalPrijsPerPersoon()`.
+- **Recras' eigen `per_x_personen: 7` bevestigt de eerder aangenomen
+  "eenheden i.p.v. personen"-hypothese** voor Bowling: het product is zelf
+  al geconfigureerd als "7 personen per eenheid, naar boven afronden" -
+  precies wat `per_eenheid_personen: 7` in `products.json` aannam.
 
 ## Open punten (moet nog live geverifieerd/aangevuld worden)
 
@@ -214,29 +264,26 @@ kunt lezen/testen zonder een echte API-verbinding.
   `products.json` op `actief: false` met een `_todo`-veld. Zodra bekend is
   welk product dit is (en of het tijdgebonden is met een startmomentgroep,
   of bijv. per token werkt) kan dit aangezet worden.
-- **Prijs-veldnaam nog niet bevestigd.** `haalPrijsPerPersoon()` in
-  `recras.js` probeert een aantal waarschijnlijke veldnamen
-  (`verkoopprijs`, `prijs`, etc.) op de Recras-productrespons. Geeft de
-  activiteitenpagina "prijs kon niet opgehaald worden" voor een product,
-  stuur dan de `details` uit de foutmelding door, dan passen we het juiste
-  veld aan.
-- **"Eenheden i.p.v. personen"-aanname bij Bowling** is gecorrigeerd naar
-  aanleiding van live gedrag (10 personen werd onterecht over tijd gesplitst
-  i.p.v. 2 banen tegelijk te boeken) maar nog niet 1-op-1 bevestigd met de
-  ruwe Recras-respons. Gebruik `GET /api/debug/beschikbaarheid/bowling?datum=...`
-  (tijdelijke debug-route) om te controleren of het "beschikbaarheid"-getal
-  inderdaad rond het aantal banen ligt. **X-Cube** is nu ook op deze manier
-  geconfigureerd (`per_eenheid_personen: 6`, max. 2 cubes) - nog niet
-  live geverifieerd met echte data, gebruik dezelfde debug-route met
-  `x-cube-30`/`x-cube-60`.
-- **Fun Curling en X-Wall: per persoon of per baan/sessie afgerekend?**
-  Voor Bowling is bevestigd dat dit per baan is (`prijs_type: 'per_eenheid'`
-  in `products.json`). Voor Fun Curling en X-Wall staat dit nog op
-  `'per_persoon'` met een `_prijs_type_todo`-veld - moet nog bevestigd
-  worden.
-- **X-Wall staat op `aantalbepaling: vast`** in Recras (i.p.v.
-  `boekingsgrootte` zoals de rest) - de betekenis van "per 8 personen"
-  hierbij is nog niet geverifieerd.
+- **Boeking-status "bevestigd" wordt door Recras afgewezen** (`{"field":
+  "status","message":"Invalid.","parameters":{"value":"bevestigd"}}` bij
+  `POST /boekingen`). Het veld zelf klopt, alleen de waarde niet. Een
+  tijdelijke debug-route `GET /api/debug/boekingen?limit=3` haalt een paar
+  bestaande boekingen op (bijv. eerder via de Recras-widget of het
+  personeelsoverzicht gemaakt) - kijk in de output welke waarde het
+  `status`-veld daar heeft en geef die door, dan passen we
+  `maakCombinatieBoeking()` in `recras.js` aan. **Dit blokkeert op dit
+  moment het daadwerkelijk aanmaken van een boeking.**
+- **"Eenheden i.p.v. personen"-aanname bij Bowling** is bevestigd, zie
+  "Prijzen: bevestigde vorm en btw" hierboven. Voor **X-Cube** is dezelfde
+  aanname nog niet met live data bevestigd (en Recras leek op enig moment 3
+  vrije eenheden te tonen terwijl er maar 2 X-Cubes zijn - zie punt 9
+  hierboven over `max_eenheden_per_moment`); gebruik
+  `GET /api/debug/product/189` en `GET /api/debug/beschikbaarheid/x-cube-30?datum=...`
+  om dit te controleren. Voor **X-Wall** (dat op `aantalbepaling: vast`
+  staat i.p.v. `per_x_personen`) is de betekenis van "per 8 personen" ook
+  nog niet geverifieerd met live data.
+- **Fun Curling en X-Wall zijn nu bevestigd per baan/sessie afgerekend**
+  (`prijs_type: 'per_eenheid'`), net als Bowling.
 - **Boeking-met-meerdere-regels tegen echte data.** Test een boeking met
   minstens 2 activiteiten en 1 gesplitste groep, en controleer in Recras
   zelf: juiste aantallen per regel, juiste totaalprijs, geen ontbrekende
@@ -281,6 +328,22 @@ kunt lezen/testen zonder een echte API-verbinding.
 - **Mobielvriendelijkheid** is met de huidige CSS redelijk basaal geregeld
   (tegels/mandje passen zich aan), maar nog niet echt getest/verfijnd op
   telefoonformaat - moet nog een aparte ronde krijgen zodra de rest staat.
+  De kalender (zie hieronder) is ook nog niet specifiek op klein scherm
+  getest.
+- **Datumkeuze is nu een altijd-zichtbare kalender** (maandweergave,
+  vorige/volgende-maand-knoppen) i.p.v. een in te klappen datumveld. Dagen
+  in het verleden en dagen zonder ENKELE beschikbare activiteit (via
+  `GET /api/dagen-beschikbaarheid`) worden grijs/niet-klikbaar getoond. Dit
+  kijkt nog niet naar het gekozen aantal personen (dat wordt pas per
+  activiteit exact gecheckt) - een dag met bijvoorbeeld maar 1 vrije plek
+  ergens telt dus al als "wel beschikbaar".
+- **Eigen pop-up en tooltip i.p.v. de browser-standaard.** De
+  bevestigingsvraag bij het oplossen van een tijd-conflict en de melding bij
+  een niet meer beschikbaar tijdstip gebruiken nu een eigen modal in
+  FEC-huisstijl (`toonBevestiging()`/`toonMelding()` in `public/index.html`)
+  in plaats van `confirm()`/`alert()`. De hover-uitleg bij een rood
+  conflict-tijdstip is een eigen CSS-"spraakballonnetje" (`data-tooltip` +
+  `::after`/`::before`) in plaats van de standaard browser-tooltip.
 - **Meertaligheid (DE/EN)** komt later; er is nog geen voorbereiding voor
   vertaalde teksten in de code.
 - Annuleren/wijzigen na het boeken, bevestigingsmails en een intern
@@ -305,6 +368,7 @@ Deze functie zit in `dagBereik()` in `server.js`.
 ## API-routes van deze server
 
 - `GET /api/producten` - actieve activiteiten incl. live prijs
+- `GET /api/dagen-beschikbaarheid?vanaf=&tot=` - per dag in een bereik of er ÜBERHAUPT iets boekbaar is (voor de kalender op stap 1); `tot` is exclusief, net als bij beschikbaarheid
 - `POST /api/mandje/instellen` `{aantal, datum, mandjeId?}` - start/wijzigt het bezoek
 - `GET /api/mandje/:mandjeId` - huidige mandje-inhoud + totaalprijs
 - `GET /api/activiteit/:slug/plan?mandjeId=&aantal=` - planningsvoorstel, overlap-aware

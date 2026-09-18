@@ -157,12 +157,136 @@
     text-decoration: line-through;
   }
   .slot.conflict {
+    position: relative;
     border: 2px solid #c0392b;
     background: #fdecea;
     color: #c0392b;
     cursor: pointer;
   }
   .slot.conflict:hover { background: #fbdbd7; }
+  /* Eigen spraakballonnetje i.p.v. de standaard browser-tooltip (title-attribuut) */
+  .slot.conflict:hover::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    bottom: calc(100% + 10px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--paars);
+    color: white;
+    padding: 8px 12px;
+    border-radius: 8px;
+    font-size: 0.78rem;
+    line-height: 1.3;
+    white-space: normal;
+    width: max-content;
+    max-width: 240px;
+    text-align: left;
+    box-shadow: 0 6px 18px rgba(36,26,58,0.25);
+    z-index: 30;
+    pointer-events: none;
+  }
+  .slot.conflict:hover::before {
+    content: '';
+    position: absolute;
+    bottom: calc(100% + 4px);
+    left: 50%;
+    transform: translateX(-50%);
+    border: 6px solid transparent;
+    border-top-color: var(--paars);
+    z-index: 30;
+    pointer-events: none;
+  }
+
+  /* Eigen modal i.p.v. browser confirm()/alert() */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(36, 26, 58, 0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    z-index: 100;
+  }
+  .modal-overlay[hidden] { display: none; }
+  .modal-kaart {
+    background: white;
+    border-radius: 10px;
+    padding: 20px 24px;
+    max-width: 380px;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.25);
+  }
+  .modal-kaart p { margin: 0 0 16px; color: var(--text); line-height: 1.4; }
+  .modal-knoppen { display: flex; gap: 8px; justify-content: flex-end; }
+  .modal-knoppen button { margin: 0; }
+
+  /* Kalender (stap 1) */
+  .kalender {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px;
+    margin-top: 4px;
+    background: white;
+  }
+  .kalender-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+    font-weight: 600;
+    color: var(--paars);
+    text-transform: capitalize;
+  }
+  .kalender-nav {
+    background: none;
+    border: none;
+    color: var(--paars);
+    font-size: 1.3rem;
+    line-height: 1;
+    padding: 2px 10px;
+    margin: 0;
+    cursor: pointer;
+  }
+  .kalender-nav:hover { color: var(--accent); }
+  .kalender-dagen-header {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    text-align: center;
+    font-size: 0.75rem;
+    color: #888;
+    margin-bottom: 4px;
+  }
+  .kalender-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 4px;
+  }
+  .kal-dag {
+    border: none;
+    background: none;
+    padding: 8px 0;
+    margin: 0;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    color: var(--text);
+  }
+  .kal-dag.leeg { cursor: default; }
+  .kal-dag:not(.leeg):not([disabled]):hover { background: var(--bg); }
+  .kal-dag.geselecteerd { background: var(--accent); color: white; font-weight: 600; }
+  .kal-dag.uitgeschakeld { color: #ccc; cursor: not-allowed; text-decoration: line-through; }
+
+  /* Mandje/zijbalk als tijdsplanning */
+  .mandje-item .planning-subgroep {
+    margin-top: 6px;
+    padding: 6px 8px;
+    background: var(--bg);
+    border-radius: 6px;
+  }
+  .planning-tijd { font-weight: 700; color: var(--paars); font-size: 0.92rem; }
+  .planning-regel { font-size: 0.8rem; color: #555; margin-top: 1px; }
+  .deelgroep-label { font-weight: 400; color: #888; font-size: 0.78rem; }
+  .planning-prijs { margin-top: 6px; font-size: 0.85rem; color: var(--accent); font-weight: 600; }
 
   .activiteit-tegel.uitgeschakeld {
     cursor: not-allowed;
@@ -205,8 +329,18 @@
         <label for="aInputAantal">Aantal personen (max. 25)</label>
         <input type="number" id="aInputAantal" min="1" max="25" value="10" />
 
-        <label for="aInputDatum">Datum</label>
-        <input type="date" id="aInputDatum" />
+        <label>Datum</label>
+        <div class="kalender" id="aKalender">
+          <div class="kalender-header">
+            <button type="button" id="kalPrevBtn" class="kalender-nav" aria-label="Vorige maand">&lsaquo;</button>
+            <span id="kalMaandLabel"></span>
+            <button type="button" id="kalNextBtn" class="kalender-nav" aria-label="Volgende maand">&rsaquo;</button>
+          </div>
+          <div class="kalender-dagen-header">
+            <span>ma</span><span>di</span><span>wo</span><span>do</span><span>vr</span><span>za</span><span>zo</span>
+          </div>
+          <div class="kalender-grid" id="kalGrid"></div>
+        </div>
 
         <button id="aVolgendeBtn" type="button">Activiteiten bekijken</button>
         <div id="aFout" class="foutmelding"></div>
@@ -285,6 +419,17 @@
     </div>
   </div>
 
+  <!-- Eigen modal i.p.v. browser confirm()/alert() -->
+  <div class="modal-overlay" id="modalOverlay" hidden>
+    <div class="modal-kaart">
+      <p id="modalBericht"></p>
+      <div class="modal-knoppen">
+        <button type="button" id="modalAnnulerenBtn" class="secundair">Annuleren</button>
+        <button type="button" id="modalOkBtn">OK</button>
+      </div>
+    </div>
+  </div>
+
 <script>
   // ---------------------------------------------------------------------
   // Status
@@ -318,6 +463,140 @@
   }
 
   // ---------------------------------------------------------------------
+  // Eigen modal i.p.v. browser confirm()/alert(), in FEC-huisstijl.
+  // ---------------------------------------------------------------------
+  function toonBevestiging(bericht) {
+    return new Promise((resolve) => {
+      const overlay = document.getElementById('modalOverlay');
+      const okBtn = document.getElementById('modalOkBtn');
+      const annulerenBtn = document.getElementById('modalAnnulerenBtn');
+      document.getElementById('modalBericht').textContent = bericht;
+      annulerenBtn.style.display = '';
+      overlay.hidden = false;
+
+      function opRuimen(resultaat) {
+        overlay.hidden = true;
+        okBtn.removeEventListener('click', okHandler);
+        annulerenBtn.removeEventListener('click', annulerenHandler);
+        resolve(resultaat);
+      }
+      function okHandler() { opRuimen(true); }
+      function annulerenHandler() { opRuimen(false); }
+      okBtn.addEventListener('click', okHandler);
+      annulerenBtn.addEventListener('click', annulerenHandler);
+    });
+  }
+
+  function toonMelding(bericht) {
+    return new Promise((resolve) => {
+      const overlay = document.getElementById('modalOverlay');
+      const okBtn = document.getElementById('modalOkBtn');
+      const annulerenBtn = document.getElementById('modalAnnulerenBtn');
+      document.getElementById('modalBericht').textContent = bericht;
+      annulerenBtn.style.display = 'none';
+      overlay.hidden = false;
+
+      function okHandler() {
+        overlay.hidden = true;
+        annulerenBtn.style.display = '';
+        okBtn.removeEventListener('click', okHandler);
+        resolve();
+      }
+      okBtn.addEventListener('click', okHandler);
+    });
+  }
+
+  // ---------------------------------------------------------------------
+  // Kalender (stap 1): altijd zichtbare maandweergave i.p.v. een in te
+  // klappen datumveld. Dagen zonder ENKELE beschikbare activiteit worden
+  // grijs/niet-klikbaar getoond (los van het gekozen aantal personen - dat
+  // wordt pas per activiteit exact gecheckt).
+  // ---------------------------------------------------------------------
+  let kalenderMaand = null; // Date, altijd op de 1e van de maand
+  let kalenderGeselecteerdeDatum = null;
+  const dagenMetCapaciteitCache = new Map(); // 'YYYY-MM' -> Set('YYYY-MM-DD')
+
+  function vandaagISO() {
+    return new Date().toISOString().slice(0, 10);
+  }
+
+  async function laadDagenBeschikbaarheid(maandStart) {
+    const sleutel = `${maandStart.getFullYear()}-${String(maandStart.getMonth() + 1).padStart(2, '0')}`;
+    if (dagenMetCapaciteitCache.has(sleutel)) return dagenMetCapaciteitCache.get(sleutel);
+
+    const volgendeMaand = new Date(maandStart.getFullYear(), maandStart.getMonth() + 1, 1);
+    const vanaf = maandStart.toISOString().slice(0, 10);
+    const tot = volgendeMaand.toISOString().slice(0, 10);
+
+    let set;
+    try {
+      const res = await fetch(`/api/dagen-beschikbaarheid?vanaf=${vanaf}&tot=${tot}`);
+      const data = await res.json();
+      set = new Set(data.dagenMetCapaciteit || []);
+    } catch (err) {
+      set = null; // bij fout: fail-open, geen dagen grijzen i.p.v. de klant blokkeren
+    }
+    if (set) dagenMetCapaciteitCache.set(sleutel, set);
+    return set;
+  }
+
+  async function renderKalender() {
+    document.getElementById('kalMaandLabel').textContent =
+      kalenderMaand.toLocaleDateString('nl-NL', { month: 'long', year: 'numeric' });
+
+    const grid = document.getElementById('kalGrid');
+    grid.innerHTML = '<p class="hint">Bezig met laden...</p>';
+
+    const dagenMetCapaciteit = await laadDagenBeschikbaarheid(kalenderMaand);
+
+    const eersteDag = new Date(kalenderMaand);
+    const laatsteDagVanMaand = new Date(kalenderMaand.getFullYear(), kalenderMaand.getMonth() + 1, 0).getDate();
+    const startOffset = (eersteDag.getDay() + 6) % 7; // maandag = eerste kolom
+
+    let html = '';
+    for (let i = 0; i < startOffset; i++) html += '<span class="kal-dag leeg"></span>';
+
+    for (let dag = 1; dag <= laatsteDagVanMaand; dag++) {
+      const datumObj = new Date(kalenderMaand.getFullYear(), kalenderMaand.getMonth(), dag);
+      const iso = datumObj.toISOString().slice(0, 10);
+      const isVerleden = iso < vandaagISO();
+      const heeftNiks = !isVerleden && dagenMetCapaciteit && !dagenMetCapaciteit.has(iso);
+      const isGeselecteerd = iso === kalenderGeselecteerdeDatum;
+      const uitgeschakeld = isVerleden || heeftNiks;
+
+      let klasse = 'kal-dag';
+      if (uitgeschakeld) klasse += ' uitgeschakeld';
+      if (isGeselecteerd) klasse += ' geselecteerd';
+
+      html += `<button type="button" class="${klasse}" data-datum="${iso}" ${uitgeschakeld ? 'disabled' : ''}>${dag}</button>`;
+    }
+
+    grid.innerHTML = html;
+    grid.querySelectorAll('.kal-dag:not(.leeg):not([disabled])').forEach((el) => {
+      el.addEventListener('click', () => {
+        kalenderGeselecteerdeDatum = el.dataset.datum;
+        renderKalender();
+      });
+    });
+  }
+
+  document.getElementById('kalPrevBtn').addEventListener('click', () => {
+    kalenderMaand = new Date(kalenderMaand.getFullYear(), kalenderMaand.getMonth() - 1, 1);
+    renderKalender();
+  });
+  document.getElementById('kalNextBtn').addEventListener('click', () => {
+    kalenderMaand = new Date(kalenderMaand.getFullYear(), kalenderMaand.getMonth() + 1, 1);
+    renderKalender();
+  });
+
+  function initKalender(startDatum) {
+    kalenderGeselecteerdeDatum = startDatum;
+    const [jaar, maand] = startDatum.split('-').map(Number);
+    kalenderMaand = new Date(jaar, maand - 1, 1);
+    renderKalender();
+  }
+
+  // ---------------------------------------------------------------------
   // Mandje ophalen/opslaan (mandjeId blijft bewaard in localStorage zodat
   // een pagina-herlaad het lopende bezoek niet meteen kwijtraakt)
   // ---------------------------------------------------------------------
@@ -329,7 +608,7 @@
         if (res.ok) {
           mandje = await res.json();
           document.getElementById('aInputAantal').value = mandje.aantal;
-          document.getElementById('aInputDatum').value = mandje.datum;
+          initKalender(mandje.datum);
           await laadProducten();
           renderZijbalk();
           toonScherm('schermB');
@@ -342,8 +621,7 @@
     }
     const morgen = new Date();
     morgen.setDate(morgen.getDate() + 1);
-    document.getElementById('aInputDatum').value = morgen.toISOString().slice(0, 10);
-    document.getElementById('aInputDatum').min = new Date().toISOString().slice(0, 10);
+    initKalender(morgen.toISOString().slice(0, 10));
     toonScherm('schermA');
   }
 
@@ -353,6 +631,10 @@
     producten = await res.json();
   }
 
+  // Toont het mandje als een tijdsplanning: per subgroep een eigen regel met
+  // tijdstip (met eindtijd), aantal personen en (indien van toepassing)
+  // aantal eenheden (banen/x-cubes), elk op een eigen regel - i.p.v. alles
+  // in 1 samengevoegde tekstregel.
   function renderZijbalk() {
     const el = document.getElementById('zijbalkInhoud');
     if (!mandje) { el.innerHTML = ''; return; }
@@ -363,17 +645,29 @@
       html += '<p class="placeholder">Nog geen activiteiten toegevoegd.</p>';
     } else {
       chronologischeItems(mandje.items).forEach((item) => {
-        const tijden = item.groepen
-          .map((g) => (item.groepen.length > 1 ? `${g.aantal}p om ${tijdNotatie(g.begin)}` : tijdNotatie(g.begin)))
-          .join(', ');
+        const subgroepenHtml = item.groepen
+          .map((g) => {
+            const eenhedenRegel = item.eenheid_naam && g.eenhedenNodig
+              ? `<div class="planning-regel">Aantal ${eenheidMeervoud(item.eenheid_naam, g.eenhedenNodig)}: ${g.eenhedenNodig}</div>`
+              : '';
+            return `
+              <div class="planning-subgroep">
+                <div class="planning-tijd">${tijdNotatie(g.begin)} &ndash; ${tijdNotatie(g.eind)}</div>
+                <div class="planning-regel">Aantal personen: ${g.aantal}</div>
+                ${eenhedenRegel}
+              </div>
+            `;
+          })
+          .join('');
+
         html += `
           <div class="mandje-item">
             <div class="regelkop">
-              <strong>${item.naam}</strong>
+              <strong>${item.naam}${item.deelgroep ? ' <span class="deelgroep-label">(deel van de groep)</span>' : ''}</strong>
               <button class="verwijder" data-item="${item.id}" title="Verwijderen">&times;</button>
             </div>
-            <div class="tijden">${item.aantal} personen${item.deelgroep ? ' (deel van de groep)' : ''} &middot; ${tijden}</div>
-            <div class="tijden">${item.subtotaal != null ? euro(item.subtotaal) : 'prijs onbekend'}</div>
+            ${subgroepenHtml}
+            <div class="planning-prijs">${item.subtotaal != null ? euro(item.subtotaal) : 'prijs onbekend'}</div>
           </div>
         `;
       });
@@ -421,7 +715,7 @@
   // ---------------------------------------------------------------------
   document.getElementById('aVolgendeBtn').addEventListener('click', async () => {
     const aantal = parseInt(document.getElementById('aInputAantal').value, 10);
-    const datum = document.getElementById('aInputDatum').value;
+    const datum = kalenderGeselecteerdeDatum;
     const foutEl = document.getElementById('aFout');
     foutEl.textContent = '';
 
@@ -611,14 +905,17 @@
         else if (isConflict) klasse += ' conflict';
 
         const overlapItems = optie.overlapItems || [];
-        const titleAttr = isConflict
-          ? ` title="Overlapt met ${conflictTooltip(overlapItems).replace(/"/g, '&quot;')} - klik om die activiteit te verplaatsen"`
+        // data-tooltip i.p.v. het title-attribuut: de CSS (.slot.conflict::after)
+        // tekent hiermee een eigen spraakballonnetje i.p.v. de standaard
+        // browser-tooltip.
+        const tooltipAttr = isConflict
+          ? ` data-tooltip="Overlapt met ${conflictTooltip(overlapItems).replace(/"/g, '&quot;')} - klik om die activiteit te verplaatsen"`
           : '';
         const overlapData = isConflict
           ? ` data-overlap-items="${JSON.stringify(overlapItems).replace(/"/g, '&quot;')}"`
           : '';
 
-        return `<div class="${klasse}" data-moment="${optie.startmoment}" data-beschikbaar="${optie.beschikbaar !== false}" data-conflict="${isConflict}"${titleAttr}${overlapData}>${tijdNotatie(optie.startmoment)}${eenhedenLabel}</div>`;
+        return `<div class="${klasse}" data-moment="${optie.startmoment}" data-beschikbaar="${optie.beschikbaar !== false}" data-conflict="${isConflict}"${tooltipAttr}${overlapData}>${tijdNotatie(optie.startmoment)}${eenhedenLabel}</div>`;
       })
       .join('');
   }
@@ -638,7 +935,7 @@
     if (overlapItems.length === 0) return;
 
     const namen = [...new Set(overlapItems.map((o) => o.naam))].join(', ');
-    const doorgaan = confirm(
+    const doorgaan = await toonBevestiging(
       `Dit tijdstip overlapt met ${namen} in je planning - samen zou dat de groepsgrootte overschrijden. ` +
       `Wil je ${namen} uit je planning verwijderen om hier een nieuwe tijd voor te kiezen?`
     );
@@ -823,7 +1120,7 @@
         renderZijbalk();
         renderActiviteitenKnop();
         toonScherm('schermB');
-        alert(data.error + ' Kies een nieuw tijdstip voor deze activiteit.');
+        await toonMelding(data.error + ' Kies een nieuw tijdstip voor deze activiteit.');
         return;
       }
 

@@ -82,11 +82,17 @@ const prijsCache = new Map(); // productId -> { prijs, opgehaaldOp }
 const PRIJS_CACHE_MS = 5 * 60 * 1000;
 
 /**
- * Bepaalt de prijs per persoon van een product, live uit Recras.
- * Recras' documentatie/response-vorm voor het prijsveld is nog niet 1-op-1
- * bevestigd tegen de echte omgeving; we proberen daarom een aantal
- * waarschijnlijke veldnamen en gooien een duidelijke fout (met de ruwe
- * data erbij) als geen daarvan bestaat, zodat dit snel te debuggen is.
+ * Bepaalt de prijs per persoon (of per eenheid, zie prijs_type in
+ * products.json) van een product, live uit Recras, INCLUSIEF btw (het
+ * bedrag dat aan de klant getoond hoort te worden).
+ *
+ * Bevestigd tegen echte productdata (product 194, Bowling):
+ *   "ProductPrice": [{ "btw": 9, "verkoop": 34.5 }], "verkoop": 34.5
+ * Het top-level `verkoop`-veld is een kopie van de eerste (standaard)
+ * prijsregel in `ProductPrice`, en is EXCLUSIEF btw. We pakken daarom de
+ * eerste `ProductPrice`-regel (voor zowel het bedrag als het btw-
+ * percentage) en rekenen zelf incl.-btw uit; `verkoop` op het hoofdniveau
+ * dient alleen als fallback als `ProductPrice` onverhoopt ontbreekt.
  */
 async function haalPrijsPerPersoon(productId) {
   const cached = prijsCache.get(productId);
@@ -95,32 +101,50 @@ async function haalPrijsPerPersoon(productId) {
   }
 
   const product = await haalProduct(productId);
-  const mogelijkeVelden = [
-    'verkoopprijs',
-    'verkoopprijs_incl_btw',
-    'prijs',
-    'prijs_incl_btw',
-    'prijs_per_persoon',
-  ];
-  let ruw;
-  for (const veld of mogelijkeVelden) {
-    if (product && product[veld] != null && product[veld] !== '') {
-      ruw = product[veld];
-      break;
+  const eerstePrijsregel = Array.isArray(product?.ProductPrice) ? product.ProductPrice[0] : null;
+
+  let verkoopExclBtw = eerstePrijsregel?.verkoop ?? product?.verkoop;
+  const btwPercentage = eerstePrijsregel?.btw;
+
+  if (verkoopExclBtw == null) {
+    // Fallback op oudere gok-veldnamen, voor het geval een ander
+    // producttype toch een andere vorm blijkt te hebben.
+    const mogelijkeVelden = ['verkoopprijs', 'verkoopprijs_incl_btw', 'prijs', 'prijs_incl_btw', 'prijs_per_persoon'];
+    for (const veld of mogelijkeVelden) {
+      if (product && product[veld] != null && product[veld] !== '') {
+        verkoopExclBtw = product[veld];
+        break;
+      }
     }
   }
 
-  if (ruw == null) {
+  if (verkoopExclBtw == null) {
     const fout = new Error(
-      `Kon geen prijsveld vinden op product ${productId} (geprobeerd: ${mogelijkeVelden.join(', ')})`
+      `Kon geen prijsveld vinden op product ${productId} (verwacht: ProductPrice[0].verkoop of verkoop)`
     );
     fout.details = product;
     throw fout;
   }
 
-  const prijs = typeof ruw === 'string' ? parseFloat(ruw) : ruw;
+  const basis = typeof verkoopExclBtw === 'string' ? parseFloat(verkoopExclBtw) : verkoopExclBtw;
+  const prijs = btwPercentage != null
+    ? Math.round(basis * (1 + btwPercentage / 100) * 100) / 100
+    : basis;
+
   prijsCache.set(productId, { prijs, opgehaaldOp: Date.now() });
   return prijs;
+}
+
+/**
+ * TIJDELIJK (debug): haalt een paar recente boekingen op, zodat we bij een
+ * bestaande (bijv. via de Recras-widget of het personeelsoverzicht gemaakte)
+ * boeking kunnen zien welke waarde het `status`-veld daadwerkelijk heeft -
+ * onze eigen `status: 'bevestigd'` werd door Recras afgewezen als ongeldige
+ * waarde, dus het juiste label/enum moeten we ergens vandaan halen.
+ */
+async function listRecenteBoekingen(limit = 5) {
+  const { data } = await recrasRequest(`/boekingen?limit=${limit}`);
+  return data;
 }
 
 /**
@@ -246,6 +270,7 @@ module.exports = {
   getBeschikbaarheid,
   haalProduct,
   haalPrijsPerPersoon,
+  listRecenteBoekingen,
   vindOfMaakKlant,
   maakCombinatieBoeking,
   berekenEind,

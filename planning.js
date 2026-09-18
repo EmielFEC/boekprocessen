@@ -22,28 +22,6 @@ function verdeel(aantal, groepen) {
 }
 
 /**
- * Verdeelt `aantal` personen GREEDY: vult elk moment tot de volledige
- * capaciteit voordat de rest naar het volgende moment gaat. Bijv.
- * verdeelGreedy(18, 12) => [12, 6]; verdeelGreedy(19, 12) => [12, 7].
- * Gebruikt voor per-eenheid producten (Bowling, X-Cube, Fun Curling,
- * X-Wall): daar is een eenheid (baan/cube) een fysieke, discrete
- * hulpbron, en wil je zo min mogelijk momenten nodig hebben in plaats van
- * de groep eerlijk te verdelen (bevestigd door Emiel voor X-Cube: 18
- * personen -> 12 op 2 cubes + 6 op de eerstvolgende cube, niet 9+9).
- */
-function verdeelGreedy(aantal, capaciteit) {
-  const sizes = [];
-  let rest = aantal;
-  const stap = capaciteit && capaciteit > 0 ? capaciteit : aantal;
-  while (rest > 0) {
-    const stuk = Math.min(rest, stap);
-    sizes.push(stuk);
-    rest -= stuk;
-  }
-  return sizes;
-}
-
-/**
  * Hoeveel 'eenheden' (banen/tafels/sessies/cubes) zijn nodig voor `aantal`
  * personen, gegeven hoeveel personen er per eenheid passen. Rondt altijd
  * naar boven af (zoals Recras' 'Afronding: boven' bij deze producten) -
@@ -52,6 +30,48 @@ function verdeelGreedy(aantal, capaciteit) {
 function berekenBenodigdeEenheden(aantal, perEenheidPersonen) {
   const perEenheid = perEenheidPersonen && perEenheidPersonen > 0 ? perEenheidPersonen : 1;
   return Math.ceil(aantal / perEenheid);
+}
+
+/**
+ * Verdeelt `aantal` personen over per-eenheid producten (Bowling, X-Cube,
+ * Fun Curling, X-Wall) volgens de door Emiel bevestigde volgorde:
+ *   1. Bereken hoeveel eenheden er in totaal nodig zijn (naar boven
+ *      afgerond - zie berekenBenodigdeEenheden).
+ *   2. Verdeel het totale aantal personen zo GELIJK mogelijk over die
+ *      eenheden (dus niet: de eerste eenheden maximaal vullen en de rest
+ *      een kleine restgroep laten zijn).
+ *   3. Omdat maar een beperkt aantal eenheden TEGELIJK op 1 moment
+ *      inzetbaar is (bijv. max. 2 X-Cubes tegelijk, of überhaupt maar 1
+ *      X-Wall), worden die gelijk-verdeelde eenheden daarna gebundeld tot
+ *      zo min mogelijk, zo vol mogelijke momenten. `maxPersonenPerMoment`
+ *      is de eerder al bepaalde personen-capaciteit van 1 moment (zie
+ *      leesMomenten) en bepaalt zo vanzelf hoeveel eenheden er tegelijk
+ *      passen (`Math.floor(maxPersonenPerMoment / perEenheidPersonen)`).
+ *
+ * Voorbeeld X-Cube (6 p.p., max. 2 tegelijk -> capaciteit 12 p. p. moment):
+ *   18 -> eenheden [6, 6, 6] -> momenten [12, 6]
+ *   19 -> eenheden [5, 5, 5, 4] -> momenten [10, 9]
+ * Voorbeeld X-Wall (8 p.p., maar 1 tegelijk -> capaciteit 8 p. p. moment):
+ *   18 -> eenheden [6, 6, 6] -> momenten [6, 6, 6] (niet 8, 8, 2)
+ */
+function verdeelOverEenheden(aantal, perEenheidPersonen, maxPersonenPerMoment) {
+  const eenhedenNodig = berekenBenodigdeEenheden(aantal, perEenheidPersonen);
+  const basis = Math.floor(aantal / eenhedenNodig);
+  const rest = aantal % eenhedenNodig;
+  const perEenheid = new Array(eenhedenNodig).fill(basis);
+  for (let i = 0; i < rest; i++) perEenheid[i] += 1;
+
+  const maxEenhedenPerMoment = Math.max(
+    1,
+    Math.floor((maxPersonenPerMoment || perEenheidPersonen) / perEenheidPersonen)
+  );
+
+  const groepsgroottes = [];
+  for (let i = 0; i < perEenheid.length; i += maxEenhedenPerMoment) {
+    const stuk = perEenheid.slice(i, i + maxEenhedenPerMoment);
+    groepsgroottes.push(stuk.reduce((som, n) => som + n, 0));
+  }
+  return groepsgroottes;
 }
 
 /**
@@ -186,11 +206,12 @@ function planBoeking(momenten, aantal, perEenheidPersonen = 1, totaalGroep = aan
     return { status: 'enkel', capaciteit, opties };
   }
 
-  // Groep past niet in 1 moment: per-eenheid producten (fysieke, discrete
-  // hulpbronnen zoals banen/cubes) vullen elk moment eerst zo vol mogelijk;
-  // pure per-persoon producten verdelen eerlijk over de benodigde momenten.
+  // Groep past niet in 1 moment: per-eenheid producten verdelen eerst
+  // gelijk over de benodigde eenheden en bundelen die daarna tot zo vol
+  // mogelijke momenten (zie verdeelOverEenheden); pure per-persoon
+  // producten verdelen simpelweg eerlijk over de benodigde momenten.
   const groepsgroottes = perEenheidPersonen > 1
-    ? verdeelGreedy(aantal, capaciteit)
+    ? verdeelOverEenheden(aantal, perEenheidPersonen, capaciteit)
     : verdeel(aantal, Math.ceil(aantal / capaciteit));
 
   const opties = beschikbaarheidPerMoment.map((m) => ({
@@ -275,7 +296,7 @@ module.exports = {
   planBoeking,
   planVervolgSchema,
   verdeel,
-  verdeelGreedy,
+  verdeelOverEenheden,
   berekenBenodigdeEenheden,
   annoteerOverlap,
   heeftConflict,

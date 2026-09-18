@@ -141,11 +141,28 @@ function bezetteItemsInfo(mandje, exclusiefItemId) {
 // overlapItems). Filtert NIETS weg - alle momenten blijven staan, ook
 // volgeboekte of conflicterende, zodat de UI ze greyed-out/rood kan tonen
 // in plaats van te laten verdwijnen.
+// Sommige producten hebben een fysieke bovengrens aan hoeveel eenheden er
+// TEGELIJK (op 1 moment) ingezet kunnen worden (bijv. X-Cube: max. 2
+// tegelijk), die niet altijd blijkt te kloppen met wat Recras' eigen
+// 'beschikbaarheid' op een gegeven moment teruggeeft. Deze functie dwingt
+// die grens hard af (`max_eenheden_per_moment` in products.json), zodat de
+// rest van de code (personenCapaciteitVoorMoment, planning.js) altijd met
+// de juiste, gecorrigeerde eenheden rekent.
+function begrensEenheden(momenten, maxEenhedenPerMoment) {
+  if (maxEenhedenPerMoment == null) return momenten;
+  return (momenten || []).map((m) => {
+    if (!m.locaties || !m.locaties[0]) return m;
+    const beperkt = Math.min(m.locaties[0].beschikbaarheid ?? 0, maxEenhedenPerMoment);
+    return { ...m, locaties: [{ ...m.locaties[0], beschikbaarheid: beperkt }, ...m.locaties.slice(1)] };
+  });
+}
+
 async function haalMomentenMetOverlapInfo(product, datum, mandje, exclusiefItemId) {
   const { begin, eind } = dagBereik(datum);
   const ruweMomenten = await recras.getBeschikbaarheid(product.product_id, begin, eind);
+  const begrensdeMomenten = begrensEenheden(ruweMomenten, product.max_eenheden_per_moment);
   const bezet = bezetteItemsInfo(mandje, exclusiefItemId);
-  return annoteerOverlap(ruweMomenten, product.duur_minuten, bezet);
+  return annoteerOverlap(begrensdeMomenten, product.duur_minuten, bezet);
 }
 
 // Personen-capaciteit van 1 moment: bij per-baan/tafel-producten (per_eenheid_personen
@@ -211,6 +228,44 @@ app.get('/api/producten', async (req, res) => {
   );
 
   res.json(resultaat);
+});
+
+// Voor de kalender op stap 1: per dag in een bereik aangeven of er ÜBERHAUPT
+// iets boekbaar is (los van het gekozen aantal personen - dat wordt pas per
+// activiteit exact gecheckt). Zo kan de kalender dagen zonder ENKELE
+// beschikbare activiteit meteen grijs/niet-klikbaar tonen, in plaats van de
+// klant een dag te laten kiezen die toch nergens iets oplevert.
+// `vanaf`/`tot` volgen dezelfde "tot exclusief" regel als elders (tot = de
+// dag ná de laatst gewenste dag).
+app.get('/api/dagen-beschikbaarheid', async (req, res) => {
+  const { vanaf, tot } = req.query;
+  if (!vanaf || !tot) {
+    return res.status(400).json({ error: 'Query parameters "vanaf" en "tot" (YYYY-MM-DD) zijn verplicht' });
+  }
+
+  const actieveProducten = Object.entries(products).filter(
+    ([slug, p]) => !slug.startsWith('_') && p.actief && p.product_id
+  );
+
+  const dagenMetCapaciteit = new Set();
+
+  await Promise.all(
+    actieveProducten.map(async ([slug, p]) => {
+      try {
+        const momenten = await recras.getBeschikbaarheid(p.product_id, vanaf, tot);
+        (momenten || []).forEach((m) => {
+          const eenheden = m?.locaties?.[0]?.beschikbaarheid ?? 0;
+          if (eenheden > 0 && m.startmoment) {
+            dagenMetCapaciteit.add(m.startmoment.slice(0, 10));
+          }
+        });
+      } catch (err) {
+        console.error(`[dagen-beschikbaarheid] ${slug}:`, err.message);
+      }
+    })
+  );
+
+  res.json({ dagenMetCapaciteit: [...dagenMetCapaciteit].sort() });
 });
 
 // ---------------------------------------------------------------------------
@@ -426,6 +481,7 @@ app.post('/api/mandje/:mandjeId/toevoegen', async (req, res) => {
       aantal: g.aantal,
       begin: g.begin,
       eind: recras.berekenEind(g.begin, product.duur_minuten),
+      eenhedenNodig: berekenBenodigdeEenheden(g.aantal, product.per_eenheid_personen),
     }));
 
     const item = {
@@ -565,6 +621,20 @@ app.get('/api/debug/product/:productId', async (req, res) => {
     res.json(data);
   } catch (err) {
     res.status(err.status || 500).json({ error: 'Kon product niet ophalen', details: err.details });
+  }
+});
+
+// TIJDELIJK - debug-route om te zien welke waarde het 'status'-veld heeft
+// op bestaande boekingen (bijv. via de Recras-widget of het personeels-
+// overzicht gemaakt), omdat onze eigen 'bevestigd' door Recras werd
+// afgewezen ("Invalid." voor field "status"). Bijv. GET /api/debug/boekingen?limit=3
+app.get('/api/debug/boekingen', async (req, res) => {
+  const limit = req.query.limit ? parseInt(req.query.limit, 10) : 5;
+  try {
+    const data = await recras.listRecenteBoekingen(limit);
+    res.json(data);
+  } catch (err) {
+    res.status(err.status || 500).json({ error: 'Kon boekingen niet ophalen', details: err.details });
   }
 });
 
