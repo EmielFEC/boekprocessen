@@ -4,24 +4,31 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Boekproces - FEC Sevenum</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   :root {
-    --accent: #1b6f5c;
-    --bg: #f7f7f5;
-    --text: #1f1f1f;
-    --border: #ddd;
+    /* FEC Sevenum huisstijl */
+    --paars: #2c1d49;
+    --oranje: #f39313;
+    --beige: #f2ede7;
+    --accent: var(--oranje);
+    --bg: var(--beige);
+    --text: #241a3a;
+    --border: #e2d9cd;
   }
   * { box-sizing: border-box; }
   body {
-    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-family: "Rubik", system-ui, -apple-system, "Segoe UI", sans-serif;
     background: var(--bg);
     color: var(--text);
     margin: 0;
     padding: 24px 16px 60px;
   }
-  h1 { font-size: 1.4rem; margin: 0 0 4px; }
-  h2.schermtitel { font-size: 1.15rem; margin: 0 0 4px; }
-  p.subtitle { color: #666; margin-top: 0; margin-bottom: 24px; }
+  h1 { font-size: 1.5rem; margin: 0 0 4px; color: var(--paars); font-weight: 700; }
+  h2.schermtitel { font-size: 1.15rem; margin: 0 0 4px; color: var(--paars); font-weight: 600; }
+  p.subtitle { color: #6b6178; margin-top: 0; margin-bottom: 24px; }
 
   .layout {
     max-width: 960px;
@@ -42,7 +49,7 @@
     padding: 16px;
     background: white;
   }
-  .zijbalk h2 { font-size: 1.05rem; margin: 0 0 12px; }
+  .zijbalk h2 { font-size: 1.05rem; margin: 0 0 12px; color: var(--paars); }
   .zijbalk .bezoekinfo { font-size: 0.85rem; color: #555; margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
   .mandje-item {
     padding: 8px 0;
@@ -107,12 +114,13 @@
     border: 1px solid var(--border);
     border-radius: 8px;
     background: white;
+    color: var(--text);
     padding: 14px;
     cursor: pointer;
     text-align: left;
   }
   .activiteit-tegel:hover { border-color: var(--accent); }
-  .activiteit-tegel .naam { font-weight: 600; }
+  .activiteit-tegel .naam { font-weight: 600; color: var(--text); font-size: 1rem; }
   .activiteit-tegel .details { color: #666; font-size: 0.85rem; margin-top: 4px; }
   .activiteit-tegel .prijs { color: var(--accent); font-size: 0.85rem; margin-top: 6px; }
 
@@ -124,7 +132,7 @@
     font-size: 0.9rem;
     margin-bottom: 20px;
   }
-  .sectiekop { font-weight: 600; margin: 24px 0 4px; font-size: 1rem; }
+  .sectiekop { font-weight: 600; margin: 24px 0 4px; font-size: 1rem; color: var(--paars); }
 
   .slots {
     display: flex;
@@ -141,6 +149,19 @@
     background: white;
   }
   .slot.selected { background: var(--accent); color: white; border-color: var(--accent); }
+  .slot.disabled {
+    color: #aaa;
+    background: #f0f0f0;
+    border-color: #eee;
+    cursor: not-allowed;
+    text-decoration: line-through;
+  }
+
+  .activiteit-tegel.uitgeschakeld {
+    cursor: not-allowed;
+    opacity: 0.55;
+  }
+  .activiteit-tegel.uitgeschakeld:hover { border-color: var(--border); }
 
   .voorstel-groep {
     border: 1px solid var(--border);
@@ -174,8 +195,8 @@
       <!-- SCHERM A: aantal personen + datum voor het hele bezoek -->
       <section id="schermA" class="scherm kaart">
         <h2 class="schermtitel">Wanneer kom je, en met hoeveel personen?</h2>
-        <label for="aInputAantal">Aantal personen</label>
-        <input type="number" id="aInputAantal" min="1" value="10" />
+        <label for="aInputAantal">Aantal personen (max. 25)</label>
+        <input type="number" id="aInputAantal" min="1" max="25" value="10" />
 
         <label for="aInputDatum">Datum</label>
         <input type="date" id="aInputDatum" />
@@ -320,7 +341,8 @@
   }
 
   async function laadProducten() {
-    const res = await fetch('/api/producten');
+    const mandjeParam = mandje?.mandjeId ? `?mandjeId=${mandje.mandjeId}` : '';
+    const res = await fetch(`/api/producten${mandjeParam}`);
     producten = await res.json();
   }
 
@@ -383,6 +405,10 @@
       foutEl.textContent = 'Vul een geldig aantal personen en een datum in.';
       return;
     }
+    if (aantal > 25) {
+      foutEl.textContent = 'Dit boekproces ondersteunt groepen tot maximaal 25 personen. Neem voor grotere groepen contact op.';
+      return;
+    }
 
     try {
       const res = await fetch('/api/mandje/instellen', {
@@ -414,11 +440,20 @@
     const grid = document.getElementById('activiteitenGrid');
     grid.innerHTML = producten
       .map((p) => {
-        const prijsHtml = p.prijs_per_persoon != null
-          ? `${euro(p.prijs_per_persoon)} p.p.`
-          : (p.prijs_fout ? 'prijs kon niet opgehaald worden' : 'prijs onbekend');
+        const nietBeschikbaar = p.heeftStartmomenten === false || p.vandaagVol === true;
+        let prijsHtml;
+        if (nietBeschikbaar) {
+          prijsHtml = p.vandaagVol ? 'Vandaag volgeboekt' : 'Niet beschikbaar op deze dag';
+        } else if (p.prijs_per_persoon != null) {
+          prijsHtml = p.prijs_type === 'per_eenheid'
+            ? `${euro(p.prijs_per_persoon)} per ${p.eenheid_naam || 'eenheid'}`
+            : `${euro(p.prijs_per_persoon)} p.p.`;
+        } else {
+          prijsHtml = p.prijs_fout ? 'prijs kon niet opgehaald worden' : 'prijs onbekend';
+        }
+        const klasse = nietBeschikbaar ? 'activiteit-tegel uitgeschakeld' : 'activiteit-tegel';
         return `
-          <button type="button" class="activiteit-tegel" data-slug="${p.slug}">
+          <button type="button" class="${klasse}" data-slug="${p.slug}" ${nietBeschikbaar ? 'data-uitgeschakeld="true"' : ''}>
             <div class="naam">${p.naam}</div>
             <div class="details">${p.duur_minuten ? p.duur_minuten + ' min' : ''}${p.eenheid_naam ? ' &middot; per ' + p.eenheid_naam : ''}</div>
             <div class="prijs">${prijsHtml}</div>
@@ -427,7 +462,7 @@
       })
       .join('');
 
-    grid.querySelectorAll('.activiteit-tegel').forEach((el) => {
+    grid.querySelectorAll('.activiteit-tegel:not([data-uitgeschakeld])').forEach((el) => {
       el.addEventListener('click', () => openActiviteit(el.dataset.slug));
     });
 
@@ -516,12 +551,38 @@
     }
   }
 
+  function eenheidMeervoud(naam, aantal) {
+    if (aantal === 1) return naam;
+    const meervoud = { baan: 'banen', tafel: 'tafels', sessie: "sessie's" };
+    return meervoud[naam] || naam + 'en';
+  }
+
+  // Bouwt de HTML voor een lijst tijd-slots. Niet-beschikbare tijden worden
+  // grijs en niet-klikbaar getoond (in plaats van weggelaten), zodat de
+  // klant ziet dat een activiteit die dag wel tijden heeft maar vol zit.
+  function renderSlotsHtml(opties) {
+    const eenheidNaam = huidigProduct()?.eenheid_naam;
+    return opties
+      .map((optie) => {
+        const eenhedenLabel = eenheidNaam && optie.eenhedenNodig
+          ? ` (${optie.eenhedenNodig} ${eenheidMeervoud(eenheidNaam, optie.eenhedenNodig)})`
+          : '';
+        const klasse = optie.beschikbaar === false ? 'slot disabled' : 'slot';
+        return `<div class="${klasse}" data-moment="${optie.startmoment}" data-beschikbaar="${optie.beschikbaar !== false}">${tijdNotatie(optie.startmoment)}${eenhedenLabel}</div>`;
+      })
+      .join('');
+  }
+
   function renderPlan(plan) {
     const planResultaat = document.getElementById('cPlanResultaat');
     gekozenGroepen = null;
 
     if (plan.status === 'onmogelijk') {
-      planResultaat.innerHTML = `<p class="foutmelding">${plan.reden}</p>`;
+      let html = `<p class="foutmelding">${plan.reden}</p>`;
+      if (plan.opties && plan.opties.length) {
+        html += `<div class="slots">${renderSlotsHtml(plan.opties)}</div>`;
+      }
+      planResultaat.innerHTML = html;
       return;
     }
 
@@ -531,18 +592,9 @@
       return;
     }
 
-    if (!plan.opties.length) {
-      planResultaat.innerHTML = '<p class="hint">Geen geschikte tijden gevonden op deze dag voor dit aantal personen.</p>';
-      return;
-    }
+    planResultaat.innerHTML = `<p class="hint">Kies een tijd:</p><div class="slots">${renderSlotsHtml(plan.opties)}</div><div id="cBevestigWrap"></div>`;
 
-    const slotsHtml = plan.opties
-      .map((optie) => `<div class="slot" data-moment="${optie.startmoment}">${tijdNotatie(optie.startmoment)}</div>`)
-      .join('');
-
-    planResultaat.innerHTML = `<p class="hint">Kies een tijd:</p><div class="slots">${slotsHtml}</div><div id="cBevestigWrap"></div>`;
-
-    planResultaat.querySelectorAll('.slot').forEach((el) => {
+    planResultaat.querySelectorAll('.slot[data-beschikbaar="true"]').forEach((el) => {
       el.addEventListener('click', () => {
         planResultaat.querySelectorAll('.slot').forEach((s) => s.classList.remove('selected'));
         el.classList.add('selected');
@@ -556,16 +608,13 @@
 
   function renderKiesStarttijd(plan) {
     const planResultaat = document.getElementById('cPlanResultaat');
-    const slotsHtml = plan.opties
-      .map((optie) => `<div class="slot" data-moment="${optie.startmoment}">${tijdNotatie(optie.startmoment)}</div>`)
-      .join('');
 
     planResultaat.innerHTML = `
       <p class="hint">Deze groep is groter dan de capaciteit per moment (${plan.capaciteit}) en wordt daarom automatisch verdeeld. Kies de starttijd van de eerste groep (${plan.groepsgroottes[0]} personen):</p>
-      <div class="slots">${slotsHtml}</div>
+      <div class="slots">${renderSlotsHtml(plan.opties)}</div>
     `;
 
-    planResultaat.querySelectorAll('.slot').forEach((el) => {
+    planResultaat.querySelectorAll('.slot[data-beschikbaar="true"]').forEach((el) => {
       el.addEventListener('click', () => haalVervolgSchemaOp(el.dataset.moment));
     });
   }
@@ -603,9 +652,13 @@
       return;
     }
 
+    const eenheidNaamVervolg = huidigProduct()?.eenheid_naam;
     let html = '<p class="hint">Voorgesteld tijdschema:</p>';
     plan.groepen.forEach((g, i) => {
-      html += `<div class="voorstel-groep"><strong>Groep ${i + 1}</strong> - ${g.aantal} personen om ${tijdNotatie(g.startmoment)}</div>`;
+      const eenhedenLabel = eenheidNaamVervolg && g.eenhedenNodig
+        ? ` (${g.eenhedenNodig} ${eenheidMeervoud(eenheidNaamVervolg, g.eenhedenNodig)})`
+        : '';
+      html += `<div class="voorstel-groep"><strong>Groep ${i + 1}</strong> - ${g.aantal} personen om ${tijdNotatie(g.startmoment)}${eenhedenLabel}</div>`;
     });
     html += `<button id="cToevoegenBtn" type="button">Voorstel toevoegen aan planning</button>`;
     html += `<button id="cAnderStartBtn" type="button" class="secundair">Kies een andere starttijd voor groep 1</button>`;

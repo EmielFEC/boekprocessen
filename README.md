@@ -126,13 +126,16 @@ Voeg een regel toe aan `products.json`, geen code nodig:
 De logica in `planning.js` is los van de Recras-communicatie, zodat je 'm
 kunt lezen/testen zonder een echte API-verbinding.
 
-1. **Capaciteit per moment** wordt afgeleid als de hoogste beschikbaarheid
-   die op de gekozen dag ergens gezien wordt. We gaan ervan uit dat Recras
-   deze waarde al in **personen-equivalent** teruggeeft, ook voor
-   baan/tafel-producten (dus dat de totale capaciteit van bijv. 3
-   bowlingbanen als 21 wordt getoond, niet als 3). **Dit is nog niet
-   bevestigd tegen echte Recras-data voor Bowling/Fun Curling/X-Wall** - zie
-   open punten.
+1. **Capaciteit per moment**: bij baan/tafel-producten (Bowling, Fun
+   Curling, X-Wall) blijkt Recras' `beschikbaarheid` het aantal vrije
+   **eenheden** (banen) terug te geven, niet al personen. De server
+   vermenigvuldigt dit daarom met `per_eenheid_personen` om de echte
+   personen-capaciteit van een moment te krijgen (`personenCapaciteitVoorMoment()`
+   in `server.js`, `leesMomenten()` in `planning.js`). Zo boekt een groep van
+   10 op Bowling (7 p.p. baan) gewoon 2 banen tegelijk op 1 moment, in plaats
+   van ten onrechte over meerdere tijden gesplitst te worden. "Capaciteit per
+   moment" (voor de vraag of een groep in 1 moment past) is daarna de
+   hoogste personen-capaciteit die op de gekozen dag ergens gezien wordt.
 2. Past de groep in 1 moment? -> `status: 'enkel'`, kies een tijd.
 3. Past de groep niet in 1 moment? -> de groep wordt zo gelijk mogelijk
    verdeeld over meerdere momenten; de klant kiest de starttijd van groep 1,
@@ -163,6 +166,25 @@ kunt lezen/testen zonder een echte API-verbinding.
      terug met welke activiteit het betreft; de frontend verwijdert dat item
      en stuurt de klant terug naar het overzicht om een nieuw tijdstip te
      kiezen, zonder de rest van het mandje kwijt te raken.
+6. **Volgeboekte tijden/activiteiten blijven zichtbaar, maar grijs.** Een
+   tijdstip zonder genoeg capaciteit wordt getoond als niet-klikbaar in
+   plaats van weggelaten (`beschikbaar: false` op elke `optie` in
+   `planning.js`). Hetzelfde geldt op de activiteitenoverzicht-pagina: een
+   activiteit die die dag wel startmomenten heeft maar overal vol zit, of
+   die dag helemaal geen startmomenten heeft, wordt getoond als
+   uitgeschakelde tegel ("Vandaag volgeboekt" / "Niet beschikbaar op deze
+   dag") in plaats van verborgen te worden.
+7. **Maximale groepsgrootte is 25 personen** (`MAX_GROEPSGROOTTE` in
+   `server.js`), zowel server- als clientside gevalideerd bij het instellen
+   van het bezoek.
+8. **Prijs per baan/eenheid vs. per persoon.** Sommige activiteiten worden
+   per baan/tafel afgerekend in plaats van per persoon. Dit staat per
+   product in `products.json` als `prijs_type: 'per_eenheid'` (bevestigd
+   voor Bowling) of `'per_persoon'` (standaard). Bij `'per_eenheid'`
+   rekent de server de prijs per subgroep uit als (naar boven afgeronde)
+   aantal eenheden × prijs, en telt dat per subgroep op - dus een gesplitste
+   groep kan in totaal meer eenheden kosten dan een ongesplitste, omdat elke
+   subgroep apart afgerond wordt.
 
 ## Open punten (moet nog live geverifieerd/aangevuld worden)
 
@@ -176,12 +198,17 @@ kunt lezen/testen zonder een echte API-verbinding.
   activiteitenpagina "prijs kon niet opgehaald worden" voor een product,
   stuur dan de `details` uit de foutmelding door, dan passen we het juiste
   veld aan.
-- **Personen-equivalente capaciteit bij baan/tafel-producten** (Bowling,
-  Fun Curling, X-Wall) is een aanname, nog niet getest tegen een dag met
-  echte boekingen op die producten. Test dit met een klein aantal (bijv. 8
-  personen bowlen = 2 banen) en controleer of het aantal getoonde vrije
-  "banen" (`benodigdeEenheden`) klopt met wat er in Recras' agenda te zien
-  is.
+- **"Eenheden i.p.v. personen"-aanname bij Bowling** is gecorrigeerd naar
+  aanleiding van live gedrag (10 personen werd onterecht over tijd gesplitst
+  i.p.v. 2 banen tegelijk te boeken) maar nog niet 1-op-1 bevestigd met de
+  ruwe Recras-respons. Gebruik `GET /api/debug/beschikbaarheid/bowling?datum=...`
+  (tijdelijke debug-route) om te controleren of het "beschikbaarheid"-getal
+  inderdaad rond het aantal banen ligt.
+- **Fun Curling en X-Wall: per persoon of per baan/sessie afgerekend?**
+  Voor Bowling is bevestigd dat dit per baan is (`prijs_type: 'per_eenheid'`
+  in `products.json`). Voor Fun Curling en X-Wall staat dit nog op
+  `'per_persoon'` met een `_prijs_type_todo`-veld - moet nog bevestigd
+  worden.
 - **X-Wall staat op `aantalbepaling: vast`** in Recras (i.p.v.
   `boekingsgrootte` zoals de rest) - de betekenis van "per 8 personen"
   hierbij is nog niet geverifieerd.
@@ -211,6 +238,22 @@ kunt lezen/testen zonder een echte API-verbinding.
   geheugen van 1 serverinstantie. Prima voor testen; bij meer verkeer of
   meerdere serverinstanties (Render kan opschalen) moet dit naar een
   gedeelde opslag (bijv. Redis) verhuizen.
+- **Huisstijl toegepast, maar niet compleet.** Kleuren (paars `#2c1d49`,
+  oranje `#f39313`, beige `#f2ede7`) en het lettertype Rubik (via Google
+  Fonts) zitten er nu in. Het handschrift-achtige weergavelettertype
+  "Mascot MVB" uit de screenshot is een eigen/betaald font en dus niet via
+  Google Fonts te laden - stuur het font-bestand (.woff2/.otf/.ttf) door als
+  je dat ook in dit boekproces wilt gebruiken (bijv. voor koppen), dan voeg
+  ik het toe via `@font-face`.
+- **Mobielvriendelijkheid** is met de huidige CSS redelijk basaal geregeld
+  (tegels/mandje passen zich aan), maar nog niet echt getest/verfijnd op
+  telefoonformaat - moet nog een aparte ronde krijgen zodra de rest staat.
+- **Meertaligheid (DE/EN)** komt later; er is nog geen voorbereiding voor
+  vertaalde teksten in de code.
+- Annuleren/wijzigen na het boeken, bevestigingsmails en een intern
+  boekingenoverzicht zijn **bewust niet gebouwd**: dat loopt straks via
+  Recras' eigen klantportaal, Recras' e-mailinstellingen, en de normale
+  Recras-agenda.
 
 ## Een geleerde les: hoe Recras' "begin"/"eind" bij beschikbaarheid werkt
 

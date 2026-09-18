@@ -12,6 +12,30 @@ const {
   filterOverlap,
 } = require('./planning');
 
+// Maximale groepsgrootte voor dit boekproces (bevestigd door Emiel).
+const MAX_GROEPSGROOTTE = 25;
+
+// Prijs voor 1 activiteit-item berekenen, afhankelijk van `prijs_type`:
+// 'per_persoon' (standaard) = prijsBasis x aantal personen.
+// 'per_eenheid' (bijv. Bowling: prijs per baan) = prijsBasis x aantal
+// benodigde eenheden (banen), per subgroep apart afgerond naar boven.
+// `groepenOfAantal` is ofwel een enkel aantal (indicatie, nog geen exacte
+// subgroepen bekend) of een array van {aantal} (exacte subgroepen).
+function berekenSubtotaal(product, prijsBasis, groepenOfAantal) {
+  if (prijsBasis == null) return null;
+  if (product.prijs_type === 'per_eenheid') {
+    const groepen = Array.isArray(groepenOfAantal) ? groepenOfAantal : [{ aantal: groepenOfAantal }];
+    return groepen.reduce(
+      (som, g) => som + berekenBenodigdeEenheden(g.aantal, product.per_eenheid_personen) * prijsBasis,
+      0
+    );
+  }
+  const totaalAantal = Array.isArray(groepenOfAantal)
+    ? groepenOfAantal.reduce((som, g) => som + g.aantal, 0)
+    : groepenOfAantal;
+  return totaalAantal * prijsBasis;
+}
+
 const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
@@ -108,6 +132,14 @@ async function haalBeschikbareMomenten(product, datum, mandje, exclusiefItemId) 
   return filterOverlap(ruweMomenten, product.duur_minuten, bezet);
 }
 
+// Personen-capaciteit van 1 moment: bij per-baan/tafel-producten (per_eenheid_personen
+// > 1) gaan we ervan uit dat Recras 'beschikbaarheid' als aantal vrije EENHEDEN
+// (banen) teruggeeft, dus vermenigvuldigen we hiermee (zie planning.js/README).
+function personenCapaciteitVoorMoment(moment, product) {
+  const eenheden = moment?.locaties?.[0]?.beschikbaarheid ?? 0;
+  return eenheden * (product.per_eenheid_personen || 1);
+}
+
 // ---------------------------------------------------------------------------
 // Producten-lijst (voor de activiteitenpagina)
 // ---------------------------------------------------------------------------
@@ -117,6 +149,12 @@ app.get('/api/producten', async (req, res) => {
     .filter(([slug, p]) => !slug.startsWith('_') && p.actief && p.product_id)
     .sort((a, b) => (a[1].volgorde || 0) - (b[1].volgorde || 0));
 
+  // Als er een mandje is (aantal + datum al bekend), checken we ook meteen
+  // of de activiteit die dag überhaupt nog iets vrij heeft, zodat de
+  // activiteitenpagina volgeboekte/niet-beschikbare activiteiten grijs kan
+  // tonen in plaats van gewoon een (niet-kloppende) prijs te laten zien.
+  const mandje = haalMandje(req.query.mandjeId);
+
   const resultaat = await Promise.all(
     lijst.map(async ([slug, p]) => {
       let prijs_per_persoon = null;
@@ -125,16 +163,33 @@ app.get('/api/producten', async (req, res) => {
         prijs_per_persoon = await recras.haalPrijsPerPersoon(p.product_id);
       } catch (err) {
         prijs_fout = err.message;
+        console.error(`[prijs] ${slug} (product ${p.product_id}):`, err.message, err.details ?? '');
       }
+
+      let heeftStartmomenten = null;
+      let vandaagVol = null;
+      if (mandje) {
+        try {
+          const momenten = await haalBeschikbareMomenten(p, mandje.datum, mandje);
+          heeftStartmomenten = momenten.length > 0;
+          vandaagVol = heeftStartmomenten && !momenten.some((m) => personenCapaciteitVoorMoment(m, p) > 0);
+        } catch (err) {
+          console.error(`[beschikbaarheid overzicht] ${slug}:`, err.message);
+        }
+      }
+
       return {
         slug,
         naam: p.naam,
         duur_minuten: p.duur_minuten,
         per_eenheid_personen: p.per_eenheid_personen,
         eenheid_naam: p.eenheid_naam,
+        prijs_type: p.prijs_type || 'per_persoon',
         toestaan_deelgroep: p.toestaan_deelgroep,
         prijs_per_persoon,
         prijs_fout,
+        heeftStartmomenten,
+        vandaagVol,
       };
     })
   );
@@ -152,6 +207,9 @@ app.post('/api/mandje/instellen', (req, res) => {
 
   if (!datum || !aantal || aantal < 1) {
     return res.status(400).json({ error: 'Verplicht: "aantal" (>=1) en "datum" (YYYY-MM-DD)' });
+  }
+  if (aantal > MAX_GROEPSGROOTTE) {
+    return res.status(400).json({ error: `Dit boekproces ondersteunt groepen tot maximaal ${MAX_GROEPSGROOTTE} personen. Neem voor grotere groepen contact op.` });
   }
 
   let mandje = haalMandje(mandjeId);
@@ -202,7 +260,7 @@ app.get('/api/activiteit/:slug/plan', async (req, res) => {
 
   try {
     const momenten = await haalBeschikbareMomenten(product, mandje.datum, mandje);
-    const plan = planBoeking(momenten, aantal);
+    const plan = planBoeking(momenten, aantal, product.per_eenheid_personen);
     const benodigdeEenheden = berekenBenodigdeEenheden(aantal, product.per_eenheid_personen);
 
     let prijs_per_persoon = null;
@@ -211,13 +269,16 @@ app.get('/api/activiteit/:slug/plan', async (req, res) => {
     } catch (err) {
       // Prijs kon niet opgehaald worden - plannen kan alsnog doorgaan.
     }
-    const totale_prijs = prijs_per_persoon != null ? prijs_per_persoon * aantal : null;
+    // Indicatie: exacte subgroepen (en dus exacte eenheden bij per-baan-
+    // producten) zijn pas bekend na het kiezen van een tijd/vervolgschema.
+    const totale_prijs = berekenSubtotaal(product, prijs_per_persoon, aantal);
 
     res.json({
       slug: req.params.slug,
       naam: product.naam,
       aantal,
       prijs_per_persoon,
+      prijs_type: product.prijs_type || 'per_persoon',
       totale_prijs,
       per_eenheid_personen: product.per_eenheid_personen,
       eenheid_naam: product.eenheid_naam,
@@ -246,12 +307,12 @@ app.get('/api/activiteit/:slug/plan-vervolg', async (req, res) => {
   try {
     const momenten = await haalBeschikbareMomenten(product, mandje.datum, mandje);
 
-    const stap1 = planBoeking(momenten, aantal);
+    const stap1 = planBoeking(momenten, aantal, product.per_eenheid_personen);
     if (stap1.status !== 'kies_starttijd') {
       return res.status(400).json({ error: 'Deze groep vereist geen (of geen geldige) starttijdkeuze meer - vraag de planning opnieuw op.' });
     }
 
-    const plan = planVervolgSchema(momenten, stap1.groepsgroottes, start);
+    const plan = planVervolgSchema(momenten, stap1.groepsgroottes, start, product.per_eenheid_personen);
 
     let prijs_per_persoon = null;
     try {
@@ -259,13 +320,21 @@ app.get('/api/activiteit/:slug/plan-vervolg', async (req, res) => {
     } catch (err) {
       // negeren, prijs is niet blokkerend voor plannen
     }
-    const totale_prijs = prijs_per_persoon != null ? prijs_per_persoon * aantal : null;
+    // Bij een geslaagd vervolgschema zijn de exacte subgroepen bekend -
+    // gebruik die voor een nauwkeurige prijs (belangrijk bij per-eenheid
+    // producten, waar elke subgroep apart naar boven afgerond wordt).
+    const totale_prijs = berekenSubtotaal(
+      product,
+      prijs_per_persoon,
+      plan.status === 'gesplitst' ? plan.groepen : aantal
+    );
 
     res.json({
       slug: req.params.slug,
       naam: product.naam,
       aantal,
       prijs_per_persoon,
+      prijs_type: product.prijs_type || 'per_persoon',
       totale_prijs,
       per_eenheid_personen: product.per_eenheid_personen,
       eenheid_naam: product.eenheid_naam,
@@ -315,8 +384,8 @@ app.post('/api/mandje/:mandjeId/toevoegen', async (req, res) => {
     const momenten = await haalBeschikbareMomenten(product, mandje.datum, mandje);
     for (const groep of genormaliseerdeGroepen) {
       const gevonden = momenten.find((m) => m.startmoment === groep.begin);
-      const beschikbaarheid = gevonden?.locaties?.[0]?.beschikbaarheid ?? 0;
-      if (!gevonden || beschikbaarheid < groep.aantal) {
+      const personenCapaciteit = gevonden ? personenCapaciteitVoorMoment(gevonden, product) : 0;
+      if (!gevonden || personenCapaciteit < groep.aantal) {
         return res.status(409).json({
           error: `Het gekozen moment (${groep.begin}) is niet meer beschikbaar voor ${groep.aantal} personen. Ververs de tijden en kies opnieuw.`,
         });
@@ -345,8 +414,9 @@ app.post('/api/mandje/:mandjeId/toevoegen', async (req, res) => {
       groepen: groepenMetEind,
       benodigdeEenheden: berekenBenodigdeEenheden(gevraagdAantal, product.per_eenheid_personen),
       eenheid_naam: product.eenheid_naam,
+      prijs_type: product.prijs_type || 'per_persoon',
       prijs_per_persoon,
-      subtotaal: prijs_per_persoon != null ? prijs_per_persoon * gevraagdAantal : null,
+      subtotaal: berekenSubtotaal(product, prijs_per_persoon, genormaliseerdeGroepen),
       toegevoegdOp: Date.now(),
     };
 
@@ -400,8 +470,8 @@ app.post('/api/mandje/:mandjeId/boeken', async (req, res) => {
       const momenten = await haalBeschikbareMomenten(product, mandje.datum, mandje, item.id);
       for (const groep of item.groepen) {
         const gevonden = momenten.find((m) => m.startmoment === groep.begin);
-        const beschikbaarheid = gevonden?.locaties?.[0]?.beschikbaarheid ?? 0;
-        if (!gevonden || beschikbaarheid < groep.aantal) {
+        const personenCapaciteit = gevonden ? personenCapaciteitVoorMoment(gevonden, product) : 0;
+        if (!gevonden || personenCapaciteit < groep.aantal) {
           return res.status(409).json({
             error: `${item.naam} om ${groep.begin} is niet meer beschikbaar. Kies een nieuw tijdstip voor deze activiteit.`,
             ongeldigItemId: item.id,
@@ -449,6 +519,38 @@ app.post('/api/mandje/:mandjeId/boeken', async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(err.status || 500).json({ error: 'Kon boeking niet aanmaken', details: err.details });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// TIJDELIJK - debug-route om de ruwe Recras-productdata te bekijken, zodat we
+// het juiste prijsveld kunnen bevestigen (zie README "Open punten"). Roep op
+// als GET /api/debug/product/194 en stuur de output door. Verwijderen zodra
+// haalPrijsPerPersoon() het juiste veld gebruikt.
+// ---------------------------------------------------------------------------
+app.get('/api/debug/product/:productId', async (req, res) => {
+  try {
+    const data = await recras.haalProduct(parseInt(req.params.productId, 10));
+    res.json(data);
+  } catch (err) {
+    res.status(err.status || 500).json({ error: 'Kon product niet ophalen', details: err.details });
+  }
+});
+
+// TIJDELIJK - debug-route om de ruwe beschikbaarheid van een product op een
+// dag te bekijken, om de "eenheden vs. personen"-aanname te verifiëren (zie
+// README). Bijv. GET /api/debug/beschikbaarheid/bowling?datum=2026-10-01
+app.get('/api/debug/beschikbaarheid/:slug', async (req, res) => {
+  const product = getProduct(req.params.slug);
+  if (!product) return res.status(404).json({ error: 'Onbekend product' });
+  const { datum } = req.query;
+  if (!datum) return res.status(400).json({ error: 'Query parameter "datum" (YYYY-MM-DD) is verplicht' });
+  try {
+    const { begin, eind } = dagBereik(datum);
+    const momenten = await recras.getBeschikbaarheid(product.product_id, begin, eind);
+    res.json({ product: { slug: req.params.slug, per_eenheid_personen: product.per_eenheid_personen }, momenten });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: 'Kon beschikbaarheid niet ophalen', details: err.details });
   }
 });
 
