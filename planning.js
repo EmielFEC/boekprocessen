@@ -120,4 +120,46 @@ function planVervolgSchema(momenten, groepsgroottes, gekozenStartmoment) {
   return { status: 'gesplitst', groepen };
 }
 
-module.exports = { planBoeking, planVervolgSchema, verdeel };
+/**
+ * Hoeveel 'eenheden' (banen/tafels/sessies) zijn nodig voor `aantal`
+ * personen, gegeven hoeveel personen er per eenheid passen. Rondt altijd
+ * naar boven af (zoals Recras' 'Afronding: boven' bij deze producten) -
+ * bijv. 22 personen bij 7 per baan -> 4 banen.
+ * Puur informatief (weergave/opmerking op de boekingsregel); de capaciteits-
+ * check zelf blijft gebaseerd op de 'beschikbaarheid' die Recras al in
+ * personen-equivalent teruggeeft (zie README voor deze aanname).
+ */
+function berekenBenodigdeEenheden(aantal, perEenheidPersonen) {
+  const perEenheid = perEenheidPersonen && perEenheidPersonen > 0 ? perEenheidPersonen : 1;
+  return Math.ceil(aantal / perEenheid);
+}
+
+/**
+ * Filtert startmomenten weg die overlappen met al geplande (mandje-)
+ * intervallen, zodat een klant niet twee activiteiten tegelijk kan boeken.
+ * `bezetIntervallen`: [{ begin: iso, eind: iso }, ...]
+ * Een moment met duur `duurMinuten` overlapt een bezet interval als
+ * moment.begin < interval.eind EN moment.eind > interval.begin.
+ */
+function filterOverlap(momenten, duurMinuten, bezetIntervallen) {
+  if (!bezetIntervallen || bezetIntervallen.length === 0) return momenten;
+
+  return (momenten || []).filter((m) => {
+    const momentBegin = new Date(m.startmoment).getTime();
+    const momentEind = momentBegin + (duurMinuten || 0) * 60 * 1000;
+
+    return !bezetIntervallen.some((interval) => {
+      const iBegin = new Date(interval.begin).getTime();
+      const iEind = new Date(interval.eind).getTime();
+      return momentBegin < iEind && momentEind > iBegin;
+    });
+  });
+}
+
+module.exports = {
+  planBoeking,
+  planVervolgSchema,
+  verdeel,
+  berekenBenodigdeEenheden,
+  filterOverlap,
+};

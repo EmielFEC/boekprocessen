@@ -2,94 +2,215 @@ require('dotenv').config();
 
 const express = require('express');
 const path = require('path');
+const crypto = require('crypto');
 const products = require('./products.json');
 const recras = require('./recras');
-const { planBoeking, planVervolgSchema } = require('./planning');
+const {
+  planBoeking,
+  planVervolgSchema,
+  berekenBenodigdeEenheden,
+  filterOverlap,
+} = require('./planning');
 
 const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Kleine helper: zoek een product op aan de hand van zijn slug uit products.json.
+// ---------------------------------------------------------------------------
+// Producten
+// ---------------------------------------------------------------------------
+
 function getProduct(slug) {
   const product = products[slug];
-  if (!product || slug === '_comment') return null;
+  if (!product || slug.startsWith('_')) return null;
   return product;
 }
 
 // Recras' "eind" is inclusief tot precies 00:00:00 van die datum, niet tot
 // en met het einde van die dag. Om alle momenten OP de gekozen dag te pakken
 // (bijv. 09:00-17:00) gebruik je dus begin = de dag zelf en eind = de dag
-// erna. (Eerder stond dit hier verkeerd om: dat gaf een lege lijst terug
-// voor de gekozen dag zelf.)
+// erna.
 function dagBereik(datum) {
   const volgendeDag = new Date(`${datum}T00:00:00Z`);
   volgendeDag.setUTCDate(volgendeDag.getUTCDate() + 1);
   return { begin: datum, eind: volgendeDag.toISOString().slice(0, 10) };
 }
 
-// Lijst van beschikbare producten/activiteiten voor de frontend (dropdown, etc.)
-app.get('/api/producten', (req, res) => {
+// ---------------------------------------------------------------------------
+// Mandje (winkelmandje) - in-memory. Geen echte "hold" op Recras-capaciteit
+// (dat kan Recras niet); we controleren beschikbaarheid opnieuw op elk
+// belangrijk moment (toevoegen, en nogmaals vlak voor boeken). Een mandje
+// dat lang niet gebruikt is, wordt automatisch opgeruimd.
+// ---------------------------------------------------------------------------
+
+const mandjes = new Map();
+const MANDJE_TTL_MS = 45 * 60 * 1000; // 45 minuten inactiviteit
+
+function nieuwMandje(aantal, datum) {
+  return {
+    aantal,
+    datum,
+    items: [],
+    laatstActief: Date.now(),
+  };
+}
+
+function haalMandje(mandjeId) {
+  if (!mandjeId) return null;
+  const mandje = mandjes.get(mandjeId);
+  if (!mandje) return null;
+  if (Date.now() - mandje.laatstActief > MANDJE_TTL_MS) {
+    mandjes.delete(mandjeId);
+    return null;
+  }
+  return mandje;
+}
+
+function raakMandjeAan(mandje) {
+  mandje.laatstActief = Date.now();
+}
+
+function berekenTotaal(mandje) {
+  return mandje.items.reduce((som, item) => som + (item.subtotaal || 0), 0);
+}
+
+function mandjeResponse(mandjeId, mandje) {
+  return {
+    mandjeId,
+    aantal: mandje.aantal,
+    datum: mandje.datum,
+    items: mandje.items,
+    totaalPrijs: berekenTotaal(mandje),
+  };
+}
+
+// Alle reeds in het mandje bezette tijdsintervallen (over alle producten
+// heen), zodat een nieuwe activiteit niet kan overlappen. Simplificatie:
+// we gaan er (voorlopig) van uit dat de hele bezoekersgroep gelijktijdig
+// steeds maar 1 activiteit doet, ook als een deel van de groep die
+// activiteit doet ("deelgroep") - zie README voor waarom dit een bewuste
+// vereenvoudiging is richting een latere uitbreiding.
+function bezetteIntervallen(mandje, exclusiefItemId) {
+  const intervallen = [];
+  for (const item of mandje.items) {
+    if (item.id === exclusiefItemId) continue;
+    for (const groep of item.groepen) {
+      intervallen.push({ begin: groep.begin, eind: groep.eind });
+    }
+  }
+  return intervallen;
+}
+
+async function haalBeschikbareMomenten(product, datum, mandje, exclusiefItemId) {
+  const { begin, eind } = dagBereik(datum);
+  const ruweMomenten = await recras.getBeschikbaarheid(product.product_id, begin, eind);
+  const bezet = bezetteIntervallen(mandje, exclusiefItemId);
+  return filterOverlap(ruweMomenten, product.duur_minuten, bezet);
+}
+
+// ---------------------------------------------------------------------------
+// Producten-lijst (voor de activiteitenpagina)
+// ---------------------------------------------------------------------------
+
+app.get('/api/producten', async (req, res) => {
   const lijst = Object.entries(products)
-    .filter(([slug]) => slug !== '_comment')
-    .map(([slug, p]) => ({
-      slug,
-      naam: p.naam,
-      duur_minuten: p.duur_minuten,
-      prijs_per_persoon: p.prijs_per_persoon ?? null,
-    }));
-  res.json(lijst);
+    .filter(([slug, p]) => !slug.startsWith('_') && p.actief && p.product_id)
+    .sort((a, b) => (a[1].volgorde || 0) - (b[1].volgorde || 0));
+
+  const resultaat = await Promise.all(
+    lijst.map(async ([slug, p]) => {
+      let prijs_per_persoon = null;
+      let prijs_fout = null;
+      try {
+        prijs_per_persoon = await recras.haalPrijsPerPersoon(p.product_id);
+      } catch (err) {
+        prijs_fout = err.message;
+      }
+      return {
+        slug,
+        naam: p.naam,
+        duur_minuten: p.duur_minuten,
+        per_eenheid_personen: p.per_eenheid_personen,
+        eenheid_naam: p.eenheid_naam,
+        toestaan_deelgroep: p.toestaan_deelgroep,
+        prijs_per_persoon,
+        prijs_fout,
+      };
+    })
+  );
+
+  res.json(resultaat);
 });
 
-// Beschikbaarheid van een product opvragen: GET /api/beschikbaarheid/springkussen?begin=2026-09-18&eind=2026-09-25
-app.get('/api/beschikbaarheid/:slug', async (req, res) => {
-  const product = getProduct(req.params.slug);
-  if (!product) return res.status(404).json({ error: 'Onbekend product' });
+// ---------------------------------------------------------------------------
+// Mandje instellen (stap 1: aantal personen + datum voor het hele bezoek)
+// ---------------------------------------------------------------------------
 
-  const { begin, eind } = req.query;
-  if (!eind) {
-    return res.status(400).json({ error: 'Query parameter "eind" is verplicht' });
-  }
-
-  try {
-    const beschikbaarheid = await recras.getBeschikbaarheid(
-      product.product_id,
-      begin,
-      eind
-    );
-    res.json(beschikbaarheid);
-  } catch (err) {
-    console.error(err);
-    res.status(err.status || 500).json({
-      error: 'Kon beschikbaarheid niet ophalen',
-      details: err.details,
-    });
-  }
-});
-
-// Planning opvragen: GET /api/plan/springkussen?datum=2026-10-01&aantal=15
-// Geeft een boekingsvoorstel terug: 1 moment (als de groep past) of een
-// verdeling over meerdere momenten (als de groep te groot is voor 1 moment).
-app.get('/api/plan/:slug', async (req, res) => {
-  const product = getProduct(req.params.slug);
-  if (!product) return res.status(404).json({ error: 'Onbekend product' });
-
-  const { datum } = req.query;
-  const aantal = parseInt(req.query.aantal, 10);
+app.post('/api/mandje/instellen', (req, res) => {
+  let { mandjeId, aantal, datum } = req.body || {};
+  aantal = parseInt(aantal, 10);
 
   if (!datum || !aantal || aantal < 1) {
-    return res.status(400).json({
-      error: 'Query parameters "datum" (YYYY-MM-DD) en "aantal" (>=1) zijn verplicht',
-    });
+    return res.status(400).json({ error: 'Verplicht: "aantal" (>=1) en "datum" (YYYY-MM-DD)' });
   }
 
-  const { begin, eind } = dagBereik(datum);
+  let mandje = haalMandje(mandjeId);
+  if (!mandje || mandje.aantal !== aantal || mandje.datum !== datum) {
+    // Nieuw bezoek (of aantal/datum gewijzigd): mandje leegmaken, want
+    // bestaande items horen bij de oude instelling.
+    mandjeId = mandjeId || crypto.randomUUID();
+    mandje = nieuwMandje(aantal, datum);
+    mandjes.set(mandjeId, mandje);
+  } else {
+    raakMandjeAan(mandje);
+  }
+
+  res.json(mandjeResponse(mandjeId, mandje));
+});
+
+app.get('/api/mandje/:mandjeId', (req, res) => {
+  const mandje = haalMandje(req.params.mandjeId);
+  if (!mandje) return res.status(404).json({ error: 'Mandje niet gevonden of verlopen' });
+  res.json(mandjeResponse(req.params.mandjeId, mandje));
+});
+
+// ---------------------------------------------------------------------------
+// Planning per activiteit (rekening houdend met de rest van het mandje)
+// ---------------------------------------------------------------------------
+
+app.get('/api/activiteit/:slug/plan', async (req, res) => {
+  const product = getProduct(req.params.slug);
+  if (!product) return res.status(404).json({ error: 'Onbekend product' });
+
+  const mandje = haalMandje(req.query.mandjeId);
+  if (!mandje) return res.status(404).json({ error: 'Mandje niet gevonden of verlopen - stel eerst aantal en datum in' });
+
+  let aantal = mandje.aantal;
+  if (req.query.aantal != null) {
+    const gevraagd = parseInt(req.query.aantal, 10);
+    if (!gevraagd || gevraagd < 1) {
+      return res.status(400).json({ error: '"aantal" moet >=1 zijn' });
+    }
+    if (gevraagd > mandje.aantal) {
+      return res.status(400).json({ error: `"aantal" kan niet groter zijn dan de totale bezoekersgroep (${mandje.aantal})` });
+    }
+    if (gevraagd !== mandje.aantal && !product.toestaan_deelgroep) {
+      return res.status(400).json({ error: `${product.naam} kan niet door een deel van de groep gedaan worden - vul het volledige aantal (${mandje.aantal}) in` });
+    }
+    aantal = gevraagd;
+  }
 
   try {
-    const momenten = await recras.getBeschikbaarheid(product.product_id, begin, eind);
+    const momenten = await haalBeschikbareMomenten(product, mandje.datum, mandje);
     const plan = planBoeking(momenten, aantal);
+    const benodigdeEenheden = berekenBenodigdeEenheden(aantal, product.per_eenheid_personen);
 
-    const prijs_per_persoon = product.prijs_per_persoon ?? null;
+    let prijs_per_persoon = null;
+    try {
+      prijs_per_persoon = await recras.haalPrijsPerPersoon(product.product_id);
+    } catch (err) {
+      // Prijs kon niet opgehaald worden - plannen kan alsnog doorgaan.
+    }
     const totale_prijs = prijs_per_persoon != null ? prijs_per_persoon * aantal : null;
 
     res.json({
@@ -98,49 +219,46 @@ app.get('/api/plan/:slug', async (req, res) => {
       aantal,
       prijs_per_persoon,
       totale_prijs,
+      per_eenheid_personen: product.per_eenheid_personen,
+      eenheid_naam: product.eenheid_naam,
+      benodigdeEenheden,
       plan,
     });
   } catch (err) {
     console.error(err);
-    res.status(err.status || 500).json({
-      error: 'Kon planning niet berekenen',
-      details: err.details,
-    });
+    res.status(err.status || 500).json({ error: 'Kon planning niet berekenen', details: err.details });
   }
 });
 
-// Vervolgschema opvragen nadat de klant de starttijd van groep 1 heeft
-// gekozen: GET /api/plan-vervolg/springkussen?datum=2026-10-01&aantal=22&start=2026-10-01T09:40:00%2B02:00
-app.get('/api/plan-vervolg/:slug', async (req, res) => {
+app.get('/api/activiteit/:slug/plan-vervolg', async (req, res) => {
   const product = getProduct(req.params.slug);
   if (!product) return res.status(404).json({ error: 'Onbekend product' });
 
-  const { datum, start } = req.query;
-  const aantal = parseInt(req.query.aantal, 10);
+  const mandje = haalMandje(req.query.mandjeId);
+  if (!mandje) return res.status(404).json({ error: 'Mandje niet gevonden of verlopen' });
 
-  if (!datum || !aantal || aantal < 1 || !start) {
-    return res.status(400).json({
-      error: 'Query parameters "datum", "aantal" en "start" zijn verplicht',
-    });
+  const aantal = parseInt(req.query.aantal, 10);
+  const { start } = req.query;
+  if (!aantal || aantal < 1 || !start) {
+    return res.status(400).json({ error: 'Query parameters "aantal" en "start" zijn verplicht' });
   }
 
-  const { begin, eind } = dagBereik(datum);
-
   try {
-    const momenten = await recras.getBeschikbaarheid(product.product_id, begin, eind);
+    const momenten = await haalBeschikbareMomenten(product, mandje.datum, mandje);
 
-    // Groepsgroottes opnieuw afleiden (zelfde berekening als stap 1), zodat
-    // de client dit niet zelf hoeft mee te sturen en niet kan manipuleren.
     const stap1 = planBoeking(momenten, aantal);
     if (stap1.status !== 'kies_starttijd') {
-      return res.status(400).json({
-        error: 'Deze groep vereist geen (of geen geldige) starttijdkeuze meer - vraag de planning opnieuw op.',
-      });
+      return res.status(400).json({ error: 'Deze groep vereist geen (of geen geldige) starttijdkeuze meer - vraag de planning opnieuw op.' });
     }
 
     const plan = planVervolgSchema(momenten, stap1.groepsgroottes, start);
 
-    const prijs_per_persoon = product.prijs_per_persoon ?? null;
+    let prijs_per_persoon = null;
+    try {
+      prijs_per_persoon = await recras.haalPrijsPerPersoon(product.product_id);
+    } catch (err) {
+      // negeren, prijs is niet blokkerend voor plannen
+    }
     const totale_prijs = prijs_per_persoon != null ? prijs_per_persoon * aantal : null;
 
     res.json({
@@ -149,84 +267,192 @@ app.get('/api/plan-vervolg/:slug', async (req, res) => {
       aantal,
       prijs_per_persoon,
       totale_prijs,
+      per_eenheid_personen: product.per_eenheid_personen,
+      eenheid_naam: product.eenheid_naam,
       plan,
     });
   } catch (err) {
     console.error(err);
-    res.status(err.status || 500).json({
-      error: 'Kon vervolgschema niet berekenen',
-      details: err.details,
-    });
+    res.status(err.status || 500).json({ error: 'Kon vervolgschema niet berekenen', details: err.details });
   }
 });
 
-// Boeking(en) aanmaken: POST /api/boeking-groep
-// body: {
-//   slug, klant: { voornaam, achternaam, email, telefoon }, bijzonderheden,
-//   groepen: [{ aantal, begin }, ...]   // 1 entry = normale boeking, >1 = gesplitste groep
-// }
-app.post('/api/boeking-groep', async (req, res) => {
-  const { slug, klant, groepen, bijzonderheden } = req.body || {};
+// ---------------------------------------------------------------------------
+// Item toevoegen aan / verwijderen uit het mandje
+// ---------------------------------------------------------------------------
 
+app.post('/api/mandje/:mandjeId/toevoegen', async (req, res) => {
+  const mandje = haalMandje(req.params.mandjeId);
+  if (!mandje) return res.status(404).json({ error: 'Mandje niet gevonden of verlopen' });
+
+  const { slug, aantal, groepen } = req.body || {};
   const product = getProduct(slug);
   if (!product) return res.status(404).json({ error: 'Onbekend product' });
 
-  // Accepteer zowel "begin" als "startmoment" als veldnaam voor het tijdstip,
-  // zodat de rechtstreekse output van GET /api/plan (dat "startmoment"
-  // gebruikt, dezelfde naam als de Recras-beschikbaarheids-API) meteen
-  // doorgestuurd kan worden zonder eerst te hoeven ombouwen.
+  const gevraagdAantal = parseInt(aantal, 10);
+  if (!gevraagdAantal || gevraagdAantal < 1) {
+    return res.status(400).json({ error: '"aantal" is verplicht en moet >=1 zijn' });
+  }
+  if (gevraagdAantal > mandje.aantal) {
+    return res.status(400).json({ error: `"aantal" kan niet groter zijn dan de totale bezoekersgroep (${mandje.aantal})` });
+  }
+  if (gevraagdAantal !== mandje.aantal && !product.toestaan_deelgroep) {
+    return res.status(400).json({ error: `${product.naam} kan niet door een deel van de groep gedaan worden` });
+  }
+
   const genormaliseerdeGroepen = Array.isArray(groepen)
     ? groepen.map((g) => ({ aantal: g.aantal, begin: g.begin || g.startmoment }))
     : [];
+  if (genormaliseerdeGroepen.length === 0 || genormaliseerdeGroepen.some((g) => !g.begin || !g.aantal)) {
+    return res.status(400).json({ error: '"groepen" moet een array zijn met minstens 1 entry {aantal, begin}' });
+  }
 
-  if (
-    !klant || !klant.email || !klant.achternaam ||
-    genormaliseerdeGroepen.length === 0 ||
-    genormaliseerdeGroepen.some((g) => !g.begin || !g.aantal)
-  ) {
-    return res.status(400).json({
-      error:
-        'Verplichte velden ontbreken: klant.voornaam, klant.achternaam, klant.email, en groepen (array met {aantal, begin of startmoment})',
+  try {
+    // Server-side herchecken: haal verse beschikbaarheid op (rekening
+    // houdend met de rest van het mandje) en controleer dat elk gekozen
+    // moment er nog steeds in staat met genoeg ruimte. Zo voorkomen we dat
+    // een client verouderde of gemanipuleerde tijden doorstuurt.
+    const momenten = await haalBeschikbareMomenten(product, mandje.datum, mandje);
+    for (const groep of genormaliseerdeGroepen) {
+      const gevonden = momenten.find((m) => m.startmoment === groep.begin);
+      const beschikbaarheid = gevonden?.locaties?.[0]?.beschikbaarheid ?? 0;
+      if (!gevonden || beschikbaarheid < groep.aantal) {
+        return res.status(409).json({
+          error: `Het gekozen moment (${groep.begin}) is niet meer beschikbaar voor ${groep.aantal} personen. Ververs de tijden en kies opnieuw.`,
+        });
+      }
+    }
+
+    let prijs_per_persoon = null;
+    try {
+      prijs_per_persoon = await recras.haalPrijsPerPersoon(product.product_id);
+    } catch (err) {
+      // Boeking mag doorgaan zonder prijsindicatie; het echte bedrag volgt uit Recras.
+    }
+
+    const groepenMetEind = genormaliseerdeGroepen.map((g) => ({
+      aantal: g.aantal,
+      begin: g.begin,
+      eind: recras.berekenEind(g.begin, product.duur_minuten),
+    }));
+
+    const item = {
+      id: crypto.randomUUID(),
+      slug,
+      naam: product.naam,
+      aantal: gevraagdAantal,
+      deelgroep: gevraagdAantal !== mandje.aantal,
+      groepen: groepenMetEind,
+      benodigdeEenheden: berekenBenodigdeEenheden(gevraagdAantal, product.per_eenheid_personen),
+      eenheid_naam: product.eenheid_naam,
+      prijs_per_persoon,
+      subtotaal: prijs_per_persoon != null ? prijs_per_persoon * gevraagdAantal : null,
+      toegevoegdOp: Date.now(),
+    };
+
+    mandje.items.push(item);
+    raakMandjeAan(mandje);
+
+    res.status(201).json(mandjeResponse(req.params.mandjeId, mandje));
+  } catch (err) {
+    console.error(err);
+    res.status(err.status || 500).json({ error: 'Kon activiteit niet toevoegen aan mandje', details: err.details });
+  }
+});
+
+app.delete('/api/mandje/:mandjeId/items/:itemId', (req, res) => {
+  const mandje = haalMandje(req.params.mandjeId);
+  if (!mandje) return res.status(404).json({ error: 'Mandje niet gevonden of verlopen' });
+
+  const voorLengte = mandje.items.length;
+  mandje.items = mandje.items.filter((i) => i.id !== req.params.itemId);
+  if (mandje.items.length === voorLengte) {
+    return res.status(404).json({ error: 'Item niet gevonden in mandje' });
+  }
+  raakMandjeAan(mandje);
+  res.json(mandjeResponse(req.params.mandjeId, mandje));
+});
+
+// ---------------------------------------------------------------------------
+// Boeking afronden: alles in het mandje wordt EEN Recras-boeking, met per
+// (sub)groep per activiteit een eigen boekingsregel.
+// ---------------------------------------------------------------------------
+
+app.post('/api/mandje/:mandjeId/boeken', async (req, res) => {
+  const mandje = haalMandje(req.params.mandjeId);
+  if (!mandje) return res.status(404).json({ error: 'Mandje niet gevonden of verlopen' });
+
+  if (mandje.items.length === 0) {
+    return res.status(400).json({ error: 'Het mandje is leeg' });
+  }
+
+  const { klant, bijzonderheden } = req.body || {};
+  if (!klant || !klant.email || !klant.achternaam) {
+    return res.status(400).json({ error: 'Verplichte klantvelden ontbreken: voornaam, achternaam, email' });
+  }
+
+  // Alles opnieuw verifiëren vlak voor het boeken: iemand anders kan
+  // ondertussen dezelfde plek(ken) hebben ingenomen.
+  for (const item of mandje.items) {
+    const product = getProduct(item.slug);
+    if (!product) continue; // zou niet moeten kunnen gebeuren
+    try {
+      const momenten = await haalBeschikbareMomenten(product, mandje.datum, mandje, item.id);
+      for (const groep of item.groepen) {
+        const gevonden = momenten.find((m) => m.startmoment === groep.begin);
+        const beschikbaarheid = gevonden?.locaties?.[0]?.beschikbaarheid ?? 0;
+        if (!gevonden || beschikbaarheid < groep.aantal) {
+          return res.status(409).json({
+            error: `${item.naam} om ${groep.begin} is niet meer beschikbaar. Kies een nieuw tijdstip voor deze activiteit.`,
+            ongeldigItemId: item.id,
+          });
+        }
+      }
+    } catch (err) {
+      console.error(err);
+      return res.status(err.status || 500).json({ error: `Kon beschikbaarheid van ${item.naam} niet herverifiëren`, details: err.details });
+    }
+  }
+
+  // Alle regels van alle activiteiten samenvoegen tot 1 lijst voor 1 boeking.
+  const regels = [];
+  for (const item of mandje.items) {
+    const product = getProduct(item.slug);
+    const meerdereGroepen = item.groepen.length > 1;
+    item.groepen.forEach((groep, i) => {
+      const delen = [];
+      if (meerdereGroepen) delen.push(`subgroep ${i + 1} van ${item.groepen.length}`);
+      if (item.deelgroep) delen.push(`deel van de groep: ${item.aantal} van ${mandje.aantal}`);
+      regels.push({
+        product_id: product.product_id,
+        begin: groep.begin,
+        duur_minuten: product.duur_minuten,
+        aantal: groep.aantal,
+        opmerking: `${item.naam}${delen.length ? ' (' + delen.join(', ') + ')' : ''}`,
+      });
     });
   }
 
   try {
-    // Klant eenmalig zoeken/aanmaken. Recras dedupliceert zelf op naam + e-mail.
     const { klant: klantData, nieuweKlant } = await recras.vindOfMaakKlant(klant);
+    const boeking = await recras.maakCombinatieBoeking({
+      klant_id: klantData.id,
+      regels,
+      status: 'bevestigd',
+      bijzonderheden,
+    });
 
-    // 1 groep = gewone boeking met 1 boekingsregel. Meerdere groepen = EEN
-    // boeking met meerdere boekingsregels (1 per subgroep), niet meerdere
-    // losse boekingen.
-    const boeking =
-      genormaliseerdeGroepen.length === 1
-        ? await recras.maakBoeking({
-            klant_id: klantData.id,
-            product_id: product.product_id,
-            book_process_id: product.book_process_id,
-            begin: genormaliseerdeGroepen[0].begin,
-            aantal: genormaliseerdeGroepen[0].aantal,
-            bijzonderheden,
-          })
-        : await recras.maakGesplitsteBoeking({
-            klant_id: klantData.id,
-            product_id: product.product_id,
-            book_process_id: product.book_process_id,
-            duur_minuten: product.duur_minuten,
-            groepen: genormaliseerdeGroepen,
-            bijzonderheden,
-          });
+    // Mandje leegmaken na succesvolle boeking.
+    mandjes.delete(req.params.mandjeId);
 
     res.status(201).json({ boeking, klant: klantData, nieuweKlant });
   } catch (err) {
     console.error(err);
-    res.status(err.status || 500).json({
-      error: 'Kon boeking niet aanmaken',
-      details: err.details,
-    });
+    res.status(err.status || 500).json({ error: 'Kon boeking niet aanmaken', details: err.details });
   }
 });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Testboekproces draait op http://localhost:${PORT}`);
+  console.log(`Boekproces draait op http://localhost:${PORT}`);
 });

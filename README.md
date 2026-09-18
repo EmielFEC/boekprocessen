@@ -1,55 +1,63 @@
-# Testboekproces voor Recras (Springkussen)
+# Boekproces voor Recras - FEC Sevenum
 
-Een minimale, werkende opzet voor een eigen boekproces bovenop de Recras API,
-losstaand van de standaard Recras-widget. Bedoeld als eerste stap richting
-een schaalbaar, custom boeksysteem voor de FEC-website.
+Een eigen boekproces bovenop de Recras API, losstaand van de standaard
+Recras-widget. Bezoekers stellen eerst hun bezoek in (aantal personen +
+datum), kiezen daarna een of meerdere losse activiteiten in een
+winkelmandje, en ronden af met één Recras-boeking voor het hele bezoek.
 
 ## Wat dit doet
 
-1. Bezoeker kiest eerst de activiteit en het **aantal personen**.
-2. De server leest beschikbaarheid (startmomenten + capaciteit) van dat
-   product uit via `GET /api2/producten/{id}/beschikbaarheid` voor de
-   gekozen dag, en berekent een boekingsvoorstel:
-   - Past de groep in 1 moment? Dan kiest de bezoeker gewoon een tijd, zoals
-     bij een normale boeking.
-   - Is de groep te groot voor 1 moment (bijv. 22 personen op een activiteit
-     met capaciteit 10)? Dan wordt eerst berekend hoe de groep **zo gelijk
-     mogelijk verdeeld** wordt (bijv. 8 + 7 + 7), en kiest de bezoeker zelf de
-     starttijd van de **eerste** subgroep. Daarna berekent de server
-     automatisch het optimale (zo aansluitend mogelijke) vervolgschema voor
-     de overige subgroepen, te bevestigen door de bezoeker (zie `planning.js`,
-     functies `planBoeking` en `planVervolgSchema`).
-3. De zijbalk toont continu een boekingsoverzicht: activiteit, aantal,
-   prijsindicatie en - zodra bekend - de voorgestelde tijd(en) per (sub)groep.
-4. Bij bevestigen: zoekt of maakt een klant aan via `POST /api2/klanten`
-   (Recras dedupliceert zelf op naam + e-mailadres: 201 = nieuwe klant, 200 =
-   samengevoegd met bestaande klant). Daarna wordt er **1 boeking** aangemaakt
-   met **1 boekingsregel per (sub)groep**, niet meerdere losse boekingen:
-   - Eerst een normale `POST /api2/boekingen` voor de eerste subgroep (dit
-     levert de boeking en zijn eerste boekingsregel op).
-   - Daarna, alleen als er gesplitst is, een `PUT /api2/boekingen/{id}` die
-     die eerste regel corrigeert naar de juiste tijd/aantal en de overige
-     subgroepen als extra boekingsregels toevoegt. Elke regel krijgt een
-     `opmerking` als "Subgroep 2 van 3 (automatisch gesplitst wegens
-     groepsgrootte)" zodat het voor de vloer duidelijk is waarom er meerdere
-     regels bij 1 boeking staan.
-   - Zie `recras.js` (`maakGesplitsteBoeking`) voor de exacte implementatie.
+1. **Bezoek instellen**: de klant vult eenmalig het **aantal personen** en de
+   **datum** van het bezoek in. Dit geldt voor de rest van het bezoek.
+2. **Activiteiten kiezen**: een overzichtspagina toont de losse activiteiten
+   (Bowling, Lasergame, American Golf, Fun Curling, X-Cube, X-Wall, ...) in
+   een vaste volgorde, plus placeholders voor Combideals en
+   Activiteitendeals ("binnenkort beschikbaar" - die komen later).
+3. Per activiteit opent een boekproces:
+   - Als de activiteit dat toestaat, kan de klant aanvinken dat **een deel
+     van de groep** deze activiteit doet (bijv. bij Lasergame), en een kleiner
+     aantal invullen dan het totale bezoekersaantal.
+   - De server leest de beschikbaarheid van die dag uit
+     (`GET /api2/producten/{id}/beschikbaarheid`), sluit tijden uit die al
+     overlappen met iets anders in het mandje, en berekent een
+     boekingsvoorstel:
+     - Past de groep in 1 moment? Dan kiest de klant een tijd.
+     - Is de groep te groot voor 1 moment? Dan kiest de klant de starttijd
+       van de eerste subgroep, en berekent de server automatisch het
+       optimale vervolgschema voor de rest (zie `planning.js`).
+   - Voor activiteiten die per baan/tafel/sessie geboekt worden (Bowling,
+     Fun Curling, X-Wall) berekent de server hoeveel eenheden nodig zijn
+     (bijv. 22 personen bowlen -> 4 banen), als **1 boekingsregel op
+     hetzelfde moment** - dit is dus geen "groep-splitsing" over tijd, dat
+     is voorbehouden aan het geval waarin een groep letterlijk niet
+     tegelijk in 1 moment past.
+   - "Toevoegen aan planning" plaatst de activiteit in het winkelmandje.
+4. Het **boekingsoverzicht (mandje)** staat continu in de zijbalk zodra de
+   klant voorbij de eerste stap is: gekozen activiteiten, aantallen, tijden
+   en een lopend totaalbedrag (prijzen worden live uit Recras opgehaald, zie
+   verderop).
+5. De klant kan een volgende activiteit toevoegen (die dan geen tijden meer
+   toont die al bezet zijn door iets anders in het mandje) of de boeking
+   afronden.
+6. Bij afronden: zoekt of maakt een klant aan via `POST /api2/klanten`
+   (Recras dedupliceert zelf op naam + e-mailadres). Daarna wordt **alles in
+   het mandje in 1 Recras-boeking** gezet, met 1 boekingsregel per
+   (sub)groep per activiteit, status **bevestigd**. Zie `recras.js`
+   (`maakCombinatieBoeking`).
 
 Dit is bewust nog geen "echt" boekproces via de `bookprocesses/book`
-Alpha-API (met de form/recap/links-structuur) - dat is stap 2. Deze opzet
-praat rechtstreeks tegen de kern-endpoints, wat voor een los product zoals
-Springkussen prima werkt en makkelijker te doorgronden is als eerste test.
+Alpha-API - deze opzet praat rechtstreeks tegen de kern-endpoints.
 
 ## Structuur
 
 ```
 recras-boekproces/
-  server.js       Express-server met de API-routes
+  server.js       Express-server: API-routes + het mandje (winkelmandje)
   recras.js       Alle communicatie met de Recras API (1 plek, herbruikbaar)
-  planning.js     Groep-splitsingslogica (los te testen, geen Recras-calls)
-  products.json   Koppeling tussen jouw "slugs" en Recras product-ids/prijzen
+  planning.js     Groep-splitsing + overlap-logica (los te testen, geen Recras-calls)
+  products.json   Koppeling tussen "slugs" en Recras product-ids/instellingen
   public/
-    index.html    Testpagina (vanilla HTML/JS, geen framework)
+    index.html    De boekpagina (vanilla HTML/JS, geen framework)
   .env.example    Voorbeeldconfiguratie (kopieer naar .env)
 ```
 
@@ -57,186 +65,182 @@ recras-boekproces/
 
 Geen adminrechten nodig: dit hele traject verloopt via je browser, met gratis
 accounts bij GitHub en Render.com. Dit is bovendien meteen de manier waarop
-dit straks ook echt live komt te staan, dus dit is geen weggegooid werk.
+dit straks ook echt live komt te staan.
 
 ### Stap 1: code op GitHub zetten
 
 1. Maak (als je die nog niet hebt) een gratis account op [github.com](https://github.com).
-2. Klik rechtsboven op **+** > **New repository**. Geef hem een naam, bijv.
-   `recras-boekproces`. Laat "Public" of "Private" staan naar keuze (Private
-   kan geen kwaad, maar is niet strikt nodig). Klik **Create repository**.
-3. Op de nieuwe, lege repository-pagina: klik **uploading an existing file**
-   (of ga naar **Add file > Upload files**).
-4. Pak de ZIP die je van mij kreeg uit op je computer. Sleep de **inhoud**
-   van die map (dus `server.js`, `recras.js`, `products.json`, de map
-   `public`, `package.json`, `package-lock.json`, `README.md`, `.gitignore`,
-   `.env.example`) in het uploadvlak. **Upload `.env` NIET** (die zit sowieso
-   niet in de ZIP, en moet ook nooit op GitHub komen als je hem later zelf
-   maakt).
-5. Klik onderaan **Commit changes**.
+2. Ga naar je bestaande repository (of maak een nieuwe aan via **+ > New
+   repository**).
+3. Ga naar **Add file > Upload files**, en upload de gewijzigde bestanden
+   opnieuw: `server.js`, `recras.js`, `planning.js`, `products.json`,
+   `public/index.html`, `README.md`. Upload `.env` NIET.
+4. Klik onderaan **Commit changes**.
 
-### Stap 2: hosten op Render.com
+### Stap 2: Render.com deployt automatisch
 
-1. Maak een gratis account op [render.com](https://render.com), bij voorkeur
-   door in te loggen met je GitHub-account (dat scheelt een koppelstap).
-2. Klik **New > Web Service**.
-3. Kies je zojuist aangemaakte GitHub-repository (`recras-boekproces`).
-4. Vul in:
-   - **Name**: iets herkenbaars, bijv. `fec-testboekproces`
-   - **Region**: Frankfurt (dichtstbij)
-   - **Branch**: `main`
-   - **Build Command**: `npm install`
-   - **Start Command**: `npm start`
-   - **Instance Type**: Free
-5. Scroll naar **Environment Variables** en voeg toe:
-   - `RECRAS_HOST` = `fecsevenum.recras.nl`
-   - `RECRAS_TOKEN` = je echte Recras API-token
-   - (laat `PORT` weg, Render regelt die zelf)
-6. Klik **Create Web Service**. Render installeert en start de app; dit
-   duurt de eerste keer 1 tot 2 minuten. Je krijgt een URL zoals
-   `https://fec-testboekproces.onrender.com`.
-7. Open die URL: dit is dezelfde testpagina als lokaal, maar nu overal
-   bereikbaar, ook door collega's.
+Als je Web Service al draait, pakt Render de wijziging vanzelf op zodra je
+commit op GitHub staat (duurt 1-2 minuten). Omgevingsvariabelen
+(`RECRAS_HOST`, `RECRAS_TOKEN`) hoef je niet opnieuw in te stellen, die
+blijven staan.
 
-**Let op (gratis Render-tier)**: een gratis "Web Service" gaat na een periode
-van inactiviteit in slaap en heeft dan ~30-50 seconden nodig om weer wakker
-te worden bij de eerstvolgende bezoeker. Voor testen is dat geen probleem;
-voor de uiteindelijke live website upgrade je naar een betaald plan (vanaf
-enkele euro's per maand) zodat hij altijd direct reageert.
+**Let op (gratis Render-tier)**: een gratis "Web Service" gaat na inactiviteit
+in slaap en heeft dan ~30-50 seconden nodig om wakker te worden. Voor de
+uiteindelijke live website upgrade je naar een betaald plan.
 
-### Wijzigingen doorvoeren
-
-Iedere keer dat je een bestand aanpast: upload het opnieuw via **Add file >
-Upload files** op GitHub (of leer `git` gebruiken als je dat prettiger
-vindt), commit de wijziging, en Render deployt automatisch de nieuwe versie.
-
-## Nieuwe producten toevoegen
+## Nieuwe activiteiten toevoegen
 
 Voeg een regel toe aan `products.json`, geen code nodig:
 
 ```json
-"lasergame": {
+"nieuwe-activiteit": {
   "product_id": 1234,
-  "naam": "Lasergame",
+  "naam": "Nieuwe activiteit",
   "duur_minuten": 30,
+  "per_eenheid_personen": 1,
+  "eenheid_naam": null,
+  "toestaan_deelgroep": true,
+  "volgorde": 9,
+  "actief": true,
   "locatie_id": null,
-  "book_process_id": null,
-  "prijs_per_persoon": 12.5
+  "book_process_id": null
 }
 ```
 
-De slug (`lasergame`) is wat je in de URL en de frontend gebruikt.
-`prijs_per_persoon` is puur voor de prijsindicatie in de zijbalk (zie
-hieronder waarom dit nog handmatig is) en mag weggelaten worden.
+- `per_eenheid_personen`: hoeveel personen passen er in 1 "eenheid" (baan/
+  tafel/sessie)? Voor een puur per-persoon activiteit is dit `1`. Voor
+  Bowling (7 p.p. baan) of Fun Curling (6 p.p. baan) staat dit hoger - de
+  server berekent dan zelf hoeveel eenheden nodig zijn en boekt dat als 1
+  regel op hetzelfde moment (geen tijdsplitsing).
+- `toestaan_deelgroep`: mag een klant een kleiner aantal opgeven dan de
+  totale bezoekersgroep voor deze activiteit?
+- `actief: false` verbergt de activiteit (gebruikt nu voor "Game Area",
+  waarvan het Recras product-ID nog niet bekend is - zie open punten
+  hieronder).
+- Prijzen worden **niet** meer hier beheerd: die worden live opgehaald via
+  `recras.haalPrijsPerPersoon()`. Zie open punten voor de aanname die dat
+  vereist.
 
-## Hoe de groep-splitsing werkt (en de aannames erachter)
+## Hoe de groep-splitsing en het mandje werken (en de aannames erachter)
 
-De logica zit in `planning.js`, los van de Recras-communicatie, zodat je 'm
-kunt lezen en testen zonder een echte API-verbinding nodig te hebben.
+De logica in `planning.js` is los van de Recras-communicatie, zodat je 'm
+kunt lezen/testen zonder een echte API-verbinding.
 
-1. De server haalt alle startmomenten van de gekozen dag op, met per moment
-   de beschikbare capaciteit.
-2. **Volledige capaciteit per moment** wordt afgeleid als de hoogste
-   beschikbaarheid die die dag ergens gezien wordt. Dit is een aanname: als
-   op de gekozen dag toevallig ieder moment al deels volgeboekt is, wordt de
-   werkelijke volledige capaciteit onderschat. Voor een preciezere aanpak zou
-   je dit getal per product apart moeten vastleggen (net als
-   `prijs_per_persoon` in `products.json`) in plaats van het af te leiden.
-3. Past de groep in 1 moment? Dan krijgt de bezoeker gewoon een keuze uit alle
-   momenten die groot genoeg zijn (`planBoeking` geeft `status: 'enkel'`).
-4. Past de groep niet in 1 moment? Dan wordt het aantal benodigde groepen
-   berekend (`Math.ceil(aantal / capaciteit)`) en het aantal personen zo
-   gelijk mogelijk verdeeld (bijv. 22 bij capaciteit 10 -> 8 + 7 + 7)
-   (`planBoeking` geeft dan `status: 'kies_starttijd'` plus de mogelijke
-   starttijden voor de EERSTE subgroep).
-5. De bezoeker kiest zelf de starttijd van groep 1. Op basis daarvan berekent
-   `planVervolgSchema` het vervolgschema: elke volgende subgroep krijgt het
-   eerstvolgende moment ná het gekozen startmoment dat groot genoeg is. Dit
-   hoeven **niet per se aaneengesloten tijden** te zijn (als een
-   tussenliggend moment toevallig al te vol zit, wordt die overgeslagen) -
-   voor de meeste dagen met normale bezetting geeft dit gewoon nette
-   opeenvolgende tijden.
-6. Past het daarna niet meer (te weinig momenten ná de gekozen starttijd),
-   dan krijgt de bezoeker een duidelijke melding en kan die een andere
-   starttijd voor groep 1 kiezen, in plaats van een gedeeltelijk voorstel.
+1. **Capaciteit per moment** wordt afgeleid als de hoogste beschikbaarheid
+   die op de gekozen dag ergens gezien wordt. We gaan ervan uit dat Recras
+   deze waarde al in **personen-equivalent** teruggeeft, ook voor
+   baan/tafel-producten (dus dat de totale capaciteit van bijv. 3
+   bowlingbanen als 21 wordt getoond, niet als 3). **Dit is nog niet
+   bevestigd tegen echte Recras-data voor Bowling/Fun Curling/X-Wall** - zie
+   open punten.
+2. Past de groep in 1 moment? -> `status: 'enkel'`, kies een tijd.
+3. Past de groep niet in 1 moment? -> de groep wordt zo gelijk mogelijk
+   verdeeld over meerdere momenten; de klant kiest de starttijd van groep 1,
+   waarna `planVervolgSchema` het optimale (zo aansluitend mogelijke)
+   vervolgschema voor de rest berekent. Een tussenliggend vol moment wordt
+   overgeslagen (dus niet per se strak aaneengesloten); pas als er na de
+   gekozen starttijd geen ruimte meer over is voor alle subgroepen, krijgt de
+   klant een melding en kan die een andere starttijd voor groep 1 kiezen.
+4. **Overlap tussen activiteiten**: `filterOverlap()` sluit bij het plannen
+   van een nieuwe activiteit alle startmomenten uit die overlappen met iets
+   dat al in het mandje zit. **Vereenvoudiging**: dit geldt nu voor het hele
+   mandje, ook als een activiteit een "deelgroep" is. Met andere woorden: er
+   wordt van uitgegaan dat de hele bezoekersgroep steeds maar 1 activiteit
+   tegelijk doet, ook al doet officieel maar een deel van de groep die
+   activiteit. Echt parallel inplannen van verschillende subgroepen op
+   verschillende activiteiten tegelijk is bewust nog niet gebouwd (zie open
+   punten) - voor nu is dit dus "veiliger dan nodig" in plaats van fout.
+5. **Winkelmandje / "hold"**: Recras zelf heeft geen reserverings-mechanisme,
+   dus er wordt geen plek écht vastgehouden zolang iemand aan het boeken is.
+   In plaats daarvan:
+   - Het mandje leeft server-side (in het geheugen) onder een `mandjeId`, en
+     wordt na 45 minuten inactiviteit automatisch opgeruimd.
+   - Bij het toevoegen van een activiteit wordt de beschikbaarheid opnieuw
+     gecontroleerd (niet blind vertrouwd op wat de klant eerder zag).
+   - Vlak vóór het definitief boeken wordt **alles in het mandje nogmaals
+     herverifieerd**. Blijkt een moment ondertussen niet meer beschikbaar
+     (iemand anders was sneller), dan geeft de server een duidelijke fout
+     terug met welke activiteit het betreft; de frontend verwijdert dat item
+     en stuurt de klant terug naar het overzicht om een nieuw tijdstip te
+     kiezen, zonder de rest van het mandje kwijt te raken.
 
-Wat dit (bewust) nog niet doet: rekening houden met personeelsbezetting,
-sluitingstijden versus laatste startmoment, of een voorkeur voor "zo vroeg
-mogelijk op een dag" versus "zo aaneengesloten mogelijk". Dat zijn keuzes die
-je het beste maakt nadat je met échte Recras-data hebt getest hoe de
-startmomenten er in de praktijk uitzien.
+## Open punten (moet nog live geverifieerd/aangevuld worden)
 
-## Wat nog ontbreekt richting een schaalbaar systeem
-
-Dit prototype dekt inmiddels het gelukkige pad inclusief groep-splitsing voor
-één los product. Voor productie op de FEC-website (of een subsite) is
-minstens dit nog nodig:
-
-- **De boeking-met-meerdere-regels flow is nog niet getest tegen echte
-  Recras-data.** De aanpak in `maakGesplitsteBoeking` volgt de Recras-
-  documentatie zo precies mogelijk (een nieuwe boekingsregel toevoegen via
-  een `PUT` genereert automatisch de bijbehorende kostenregel, aldus de
-  docs), maar dit is de meest onzekere plek in deze opzet. **Test dit als
-  eerste** zodra je een echte token hebt: boek een groep van bijvoorbeeld 15
-  personen en controleer in Recras zelf of de boeking er correct uitziet
-  (juiste aantallen per regel, juiste totaalprijs, geen dubbele of
-  ontbrekende kostenregels). Krijg je een foutmelding, dan toont het
-  testscherm de ruwe Recras-foutmelding (`details` in de JSON-respons),
-  stuur die door dan zoeken we het gericht uit.
-- **Race conditions.** Tussen het tonen van een voorstel (of vervolgschema)
-  en het bevestigen ervan kan iemand anders een van die momenten alsnog
-  volboeken - `planVervolgSchema` checkt alleen of het gekozen moment van
-  groep 1 op dat moment nog past, niet de vervolgmomenten. Een tijdelijke
-  "hold" op een tijdslot terwijl iemand het formulier afrondt is nodig
-  voordat dit live gaat, zeker bij een gesplitste groep met meerdere
-  momenten tegelijk.
-- **Prijsweergave is nog een indicatie.** De prijs komt nu uit het handmatig
-  ingevulde `prijs_per_persoon` in `products.json`, niet rechtstreeks uit
-  Recras. Zodra een product complexere prijsregels heeft (staffels, dynamic
-  pricing, kortingen), klopt dit getal niet meer. De `validate`-stap uit de
-  bookprocess-API (of de prijsvelden van het product zelf via de Products-
-  endpoint) kan dit later vervangen door een altijd kloppend bedrag.
-- **Validatie en foutafhandeling richting de klant.** Nu worden Recras-
-  foutmeldingen ruw doorgegeven; voor een klantgerichte site wil je dit
-  vertalen naar begrijpelijke Nederlandse meldingen.
-- **Beveiliging.** De Recras-token staat nu alleen server-side (goed), maar
-  er is nog geen rate limiting, CORS-beleid of bescherming tegen misbruik van
-  het boekingsformulier.
-- **Deployment.** Dit draait nu lokaal. Voor de website heb je een hosting-
-  omgeving nodig (bijv. een kleine Node-hosting, of dit inbedden als
-  serverless functions), plus een manier om het in WordPress of een subsite
-  te embedden (iframe of los uitgeserveerde pagina/widget).
-- **Meerdere producten per boeking / bookprocess-achtige flows** (bijv. eerst
-  activiteit kiezen, dan extra's zoals eten): dat vraagt om de stap-voor-stap
-  `bookprocesses/book` API in plaats van deze rechtstreekse aanpak, of een
-  eigen stappen-wizard die meerdere `boekingsregels` in één boeking bundelt.
+- **"Game Area" heeft nog geen Recras product-ID.** Staat in
+  `products.json` op `actief: false` met een `_todo`-veld. Zodra bekend is
+  welk product dit is (en of het tijdgebonden is met een startmomentgroep,
+  of bijv. per token werkt) kan dit aangezet worden.
+- **Prijs-veldnaam nog niet bevestigd.** `haalPrijsPerPersoon()` in
+  `recras.js` probeert een aantal waarschijnlijke veldnamen
+  (`verkoopprijs`, `prijs`, etc.) op de Recras-productrespons. Geeft de
+  activiteitenpagina "prijs kon niet opgehaald worden" voor een product,
+  stuur dan de `details` uit de foutmelding door, dan passen we het juiste
+  veld aan.
+- **Personen-equivalente capaciteit bij baan/tafel-producten** (Bowling,
+  Fun Curling, X-Wall) is een aanname, nog niet getest tegen een dag met
+  echte boekingen op die producten. Test dit met een klein aantal (bijv. 8
+  personen bowlen = 2 banen) en controleer of het aantal getoonde vrije
+  "banen" (`benodigdeEenheden`) klopt met wat er in Recras' agenda te zien
+  is.
+- **X-Wall staat op `aantalbepaling: vast`** in Recras (i.p.v.
+  `boekingsgrootte` zoals de rest) - de betekenis van "per 8 personen"
+  hierbij is nog niet geverifieerd.
+- **Boeking-met-meerdere-regels tegen echte data.** Test een boeking met
+  minstens 2 activiteiten en 1 gesplitste groep, en controleer in Recras
+  zelf: juiste aantallen per regel, juiste totaalprijs, geen ontbrekende
+  kostenregels.
+- **Race conditions** zijn verkleind (herverificatie bij toevoegen én bij
+  boeken) maar niet volledig uitgesloten tussen die twee momenten.
+- **Mixen van subgroepen over verschillende activiteiten** (een deel van de
+  groep bowlt, een deel doet lasergame, **tegelijkertijd**) is nog niet
+  gebouwd. Het datamodel (aparte `aantal` per mandje-item, `deelgroep`-vlag)
+  is er wel al op voorbereid; wat nog ontbreekt is dat de overlap-check per
+  subgroep in plaats van per hele bezoekersgroep gaat kijken.
+- **Combideals en Activiteitendeals** staan als placeholder op de
+  activiteitenpagina ("binnenkort beschikbaar") en doen nog niets.
+- **Dynamische prijzen** zijn nog niet meegenomen; de huidige live-prijs is
+  de standaard verkoopprijs van het product.
+- **Betaalmethode** (Mollie / op locatie) is nog niet gebouwd; elke boeking
+  komt nu direct op status "bevestigd" te staan zonder betaalstap.
+- **Beelden per activiteit** ontbreken nog (tegels tonen alleen naam, duur
+  en prijs).
+- **Validatie/foutafhandeling richting de klant** is functioneel maar nog
+  niet vertaald naar vriendelijke, klantgerichte Nederlandse teksten voor
+  elk mogelijk foutscenario.
+- **Beveiliging/schaalbaarheid van het mandje**: dit staat nu in het
+  geheugen van 1 serverinstantie. Prima voor testen; bij meer verkeer of
+  meerdere serverinstanties (Render kan opschalen) moet dit naar een
+  gedeelde opslag (bijv. Redis) verhuizen.
 
 ## Een geleerde les: hoe Recras' "begin"/"eind" bij beschikbaarheid werkt
 
 Bij `GET /api2/producten/{id}/beschikbaarheid` is `begin` exclusief en `eind`
 inclusief - maar "inclusief" betekent hier **inclusief het exacte tijdstip
 00:00:00 van die datum**, niet "tot en met het einde van die dag". Om alle
-momenten OP een gekozen dag (bijv. 09:00-17:00) op te vragen, gebruik je dus:
+momenten OP een gekozen dag op te vragen, gebruik je dus:
 
 ```
 begin = de gekozen dag zelf       (bijv. 2026-10-01)
 eind  = de dag ERNA                (bijv. 2026-10-02)
 ```
 
-Niet `begin = dag ervoor, eind = de gekozen dag` (dat lijkt logischer gezien
-de exclusief/inclusief-namen, maar levert een lege lijst op voor de gekozen
-dag zelf). Deze functie zit nu correct in `dagBereik()` in `server.js`.
+Deze functie zit in `dagBereik()` in `server.js`.
 
-## API-routes van deze server (voor eigen gebruik/uitbreiding)
+## API-routes van deze server
 
-- `GET /api/producten` - lijst van geconfigureerde activiteiten
-- `GET /api/plan/:slug?datum=YYYY-MM-DD&aantal=N` - stap 1: `enkel` (kies een tijd), `kies_starttijd` (kies de starttijd van groep 1), of `onmogelijk`
-- `GET /api/plan-vervolg/:slug?datum=&aantal=&start=<ISO-startmoment>` - stap 2 (alleen bij `kies_starttijd`): berekent het vervolgschema voor de overige subgroepen
-- `POST /api/boeking-groep` - maakt de boeking aan op basis van het bevestigde voorstel (1 of meerdere `groepen`)
+- `GET /api/producten` - actieve activiteiten incl. live prijs
+- `POST /api/mandje/instellen` `{aantal, datum, mandjeId?}` - start/wijzigt het bezoek
+- `GET /api/mandje/:mandjeId` - huidige mandje-inhoud + totaalprijs
+- `GET /api/activiteit/:slug/plan?mandjeId=&aantal=` - planningsvoorstel, overlap-aware
+- `GET /api/activiteit/:slug/plan-vervolg?mandjeId=&aantal=&start=` - vervolgschema bij splitsing
+- `POST /api/mandje/:mandjeId/toevoegen` `{slug, aantal, groepen}` - activiteit aan mandje toevoegen
+- `DELETE /api/mandje/:mandjeId/items/:itemId` - activiteit uit mandje verwijderen
+- `POST /api/mandje/:mandjeId/boeken` `{klant, bijzonderheden}` - herverifieert alles en maakt de Recras-boeking
 
 ## Relevante Recras API-referenties
 
 - Beschikbaarheid: `GET /api2/producten/{id}/beschikbaarheid`
+- Product ophalen (prijs): `GET /api2/producten/{id}`
 - Klant aanmaken/matchen: `POST /api2/klanten`
-- Boeking aanmaken: `POST /api2/boekingen`
+- Boeking aanmaken/bijwerken: `POST /api2/boekingen`, `PUT /api2/boekingen/{id}`
 - Alpha bookprocess-flow (voor later): `/bookprocesses/book`

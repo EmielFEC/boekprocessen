@@ -69,6 +69,61 @@ async function getBeschikbaarheid(productId, begin, eind) {
 }
 
 /**
+ * Haalt de ruwe productgegevens van Recras op (voor prijs, naam, etc.).
+ */
+async function haalProduct(productId) {
+  const { data } = await recrasRequest(`/producten/${productId}`);
+  return data;
+}
+
+// Kleine cache (5 minuten) zodat we niet bij elke paginalading van de
+// activiteitenpagina alle producten opnieuw ophalen bij Recras.
+const prijsCache = new Map(); // productId -> { prijs, opgehaaldOp }
+const PRIJS_CACHE_MS = 5 * 60 * 1000;
+
+/**
+ * Bepaalt de prijs per persoon van een product, live uit Recras.
+ * Recras' documentatie/response-vorm voor het prijsveld is nog niet 1-op-1
+ * bevestigd tegen de echte omgeving; we proberen daarom een aantal
+ * waarschijnlijke veldnamen en gooien een duidelijke fout (met de ruwe
+ * data erbij) als geen daarvan bestaat, zodat dit snel te debuggen is.
+ */
+async function haalPrijsPerPersoon(productId) {
+  const cached = prijsCache.get(productId);
+  if (cached && Date.now() - cached.opgehaaldOp < PRIJS_CACHE_MS) {
+    return cached.prijs;
+  }
+
+  const product = await haalProduct(productId);
+  const mogelijkeVelden = [
+    'verkoopprijs',
+    'verkoopprijs_incl_btw',
+    'prijs',
+    'prijs_incl_btw',
+    'prijs_per_persoon',
+  ];
+  let ruw;
+  for (const veld of mogelijkeVelden) {
+    if (product && product[veld] != null && product[veld] !== '') {
+      ruw = product[veld];
+      break;
+    }
+  }
+
+  if (ruw == null) {
+    const fout = new Error(
+      `Kon geen prijsveld vinden op product ${productId} (geprobeerd: ${mogelijkeVelden.join(', ')})`
+    );
+    fout.details = product;
+    throw fout;
+  }
+
+  const prijs = typeof ruw === 'string' ? parseFloat(ruw) : ruw;
+  prijsCache.set(productId, { prijs, opgehaaldOp: Date.now() });
+  return prijs;
+}
+
+/**
  * Zoekt of maakt een klant aan. Recras doet de deduplicatie zelf: als naam +
  * e-mailadres van de contactpersoon al bestaan, geeft de API een 200 terug
  * met de bestaande klant; anders een 201 met een nieuwe klant. Wij hoeven
@@ -99,38 +154,6 @@ async function vindOfMaakKlant({ naam, voornaam, achternaam, email, telefoon }) 
 }
 
 /**
- * Maakt een boeking aan voor een klant, gebaseerd op een los product
- * (zonder package/arrangement). `begin` is het startmoment van de boeking.
- */
-async function maakBoeking({
-  klant_id,
-  product_id,
-  book_process_id,
-  begin,
-  aantal,
-  status = 'informatie',
-  bijzonderheden,
-}) {
-  const payload = {
-    klant_id,
-    begin,
-    personen: aantal,
-    product_id,
-    status,
-  };
-
-  if (book_process_id) payload.book_process_id = book_process_id;
-  if (bijzonderheden) payload.bijzonderheden = bijzonderheden;
-
-  const { data } = await recrasRequest('/boekingen', {
-    method: 'POST',
-    body: payload,
-  });
-
-  return data;
-}
-
-/**
  * Telt `duur_minuten` op bij een ISO-tijdstip om het eindtijdstip van een
  * boekingsregel te berekenen.
  */
@@ -141,42 +164,45 @@ function berekenEind(beginIso, duurMinuten) {
 }
 
 /**
- * Maakt EEN boeking aan met MEERDERE boekingsregels voor hetzelfde product,
- * voor een groep die over meerdere startmomenten verdeeld is (bijv. 22
- * personen -> regels van 7, 7 en 8 personen op verschillende tijden).
+ * Maakt EEN boeking aan met een of meerdere boekingsregels, eventueel voor
+ * VERSCHILLENDE producten (bijv. Bowling om 14:00 + Lasergame om 15:00 in
+ * dezelfde boeking, of één product gesplitst over meerdere subgroepen/tijden).
  *
  * Werkwijze (in 2 stappen, want de create-endpoint van Recras kan maar 1
  * boekingsregel tegelijk aanmaken):
- *  1. POST /boekingen met de eerste subgroep -> dit levert de boeking én
- *     zijn eerste (automatisch aangemaakte) boekingsregel op.
+ *  1. POST /boekingen met de eerste regel -> dit levert de boeking én zijn
+ *     eerste (automatisch aangemaakte) boekingsregel op.
  *  2. PUT /boekingen/{id} om die eerste regel te corrigeren naar de juiste
- *     aantal/tijd, en de overige subgroepen als nieuwe boekingsregels toe te
- *     voegen. Volgens de Recras-documentatie hoeft bij het toevoegen van een
- *     nieuwe boekingsregel geen bijbehorende kostenregel meegestuurd te
- *     worden ("this happens automatically") - we sturen de bestaande
+ *     product/aantal/tijd, en de overige regels toe te voegen. Volgens de
+ *     Recras-documentatie hoeft bij het toevoegen van een nieuwe
+ *     boekingsregel geen bijbehorende kostenregel meegestuurd te worden
+ *     ("this happens automatically") - we sturen de bestaande
  *     kosten-structuur dus ongewijzigd terug, puur omdat `boekingsregels` en
  *     `kosten` samen meegestuurd moeten worden.
+ *
+ * `regels`: [{ product_id, begin, duur_minuten, aantal, opmerking }, ...]
+ *           (minstens 1 entry)
  */
-async function maakGesplitsteBoeking({
+async function maakCombinatieBoeking({
   klant_id,
-  product_id,
-  book_process_id,
-  duur_minuten,
-  groepen, // [{ aantal, begin }, ...] - minstens 2 entries
-  status = 'informatie',
+  regels,
+  status = 'bevestigd',
   bijzonderheden,
 }) {
-  const totaalAantal = groepen.reduce((som, g) => som + g.aantal, 0);
-  const eersteGroep = groepen[0];
+  if (!Array.isArray(regels) || regels.length === 0) {
+    throw new Error('maakCombinatieBoeking heeft minstens 1 regel nodig');
+  }
+
+  const totaalAantal = regels.reduce((som, r) => som + r.aantal, 0);
+  const eersteRegelInput = regels[0];
 
   const createPayload = {
     klant_id,
-    begin: eersteGroep.begin,
+    begin: eersteRegelInput.begin,
     personen: totaalAantal,
-    product_id,
+    product_id: eersteRegelInput.product_id,
     status,
   };
-  if (book_process_id) createPayload.book_process_id = book_process_id;
   if (bijzonderheden) createPayload.bijzonderheden = bijzonderheden;
 
   const { data: boeking } = await recrasRequest('/boekingen', {
@@ -184,24 +210,24 @@ async function maakGesplitsteBoeking({
     body: createPayload,
   });
 
-  const eersteRegel = boeking.boekingsregels?.[0];
-  if (!eersteRegel) {
+  const eersteBoekingsregel = boeking.boekingsregels?.[0];
+  if (!eersteBoekingsregel) {
     throw new Error(
       'Onverwacht: Recras gaf geen boekingsregel terug bij het aanmaken van de boeking'
     );
   }
 
-  const totaalGroepen = groepen.length;
-  const nieuweBoekingsregels = groepen.map((groep, i) => {
+  const nieuweBoekingsregels = regels.map((regel, i) => {
     const basis = {
-      aantal: groep.aantal,
-      begin: groep.begin,
-      eind: berekenEind(groep.begin, duur_minuten),
-      opmerking: `Subgroep ${i + 1} van ${totaalGroepen} (automatisch gesplitst wegens groepsgrootte)`,
+      product_id: regel.product_id,
+      aantal: regel.aantal,
+      begin: regel.begin,
+      eind: berekenEind(regel.begin, regel.duur_minuten),
+      opmerking: regel.opmerking || undefined,
     };
-    // De eerste subgroep hergebruikt de al bestaande boekingsregel (met id),
-    // de rest zijn nieuwe regels (zonder id, met product_id erbij).
-    return i === 0 ? { id: eersteRegel.id, ...basis } : { product_id, ...basis };
+    // De eerste regel hergebruikt de al bestaande boekingsregel (met id),
+    // de rest zijn nieuwe regels (zonder id).
+    return i === 0 ? { id: eersteBoekingsregel.id, ...basis } : basis;
   });
 
   const { data: bijgewerkteBoeking } = await recrasRequest(`/boekingen/${boeking.id}`, {
@@ -218,7 +244,9 @@ async function maakGesplitsteBoeking({
 
 module.exports = {
   getBeschikbaarheid,
+  haalProduct,
+  haalPrijsPerPersoon,
   vindOfMaakKlant,
-  maakBoeking,
-  maakGesplitsteBoeking,
+  maakCombinatieBoeking,
+  berekenEind,
 };

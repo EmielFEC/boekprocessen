@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Testboekproces - FEC Sevenum</title>
+<title>Boekproces - FEC Sevenum</title>
 <style>
   :root {
     --accent: #1b6f5c;
@@ -20,17 +20,18 @@
     padding: 24px 16px 60px;
   }
   h1 { font-size: 1.4rem; margin: 0 0 4px; }
+  h2.schermtitel { font-size: 1.15rem; margin: 0 0 4px; }
   p.subtitle { color: #666; margin-top: 0; margin-bottom: 24px; }
 
   .layout {
-    max-width: 900px;
+    max-width: 960px;
     margin: 0 auto;
     display: flex;
     flex-wrap: wrap-reverse;
     gap: 24px;
     align-items: flex-start;
   }
-  .hoofd { flex: 2 1 420px; min-width: 300px; }
+  .hoofd { flex: 2 1 460px; min-width: 300px; }
   .zijbalk {
     flex: 1 1 260px;
     min-width: 240px;
@@ -42,14 +43,18 @@
     background: white;
   }
   .zijbalk h2 { font-size: 1.05rem; margin: 0 0 12px; }
-  .zijbalk .regel {
-    display: flex;
-    justify-content: space-between;
-    font-size: 0.9rem;
-    padding: 4px 0;
+  .zijbalk .bezoekinfo { font-size: 0.85rem; color: #555; margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
+  .mandje-item {
+    padding: 8px 0;
     border-bottom: 1px dashed var(--border);
+    font-size: 0.9rem;
   }
-  .zijbalk .regel:last-of-type { border-bottom: none; }
+  .mandje-item:last-of-type { border-bottom: none; }
+  .mandje-item .regelkop { display: flex; justify-content: space-between; align-items: center; }
+  .mandje-item .tijden { color: #555; margin-top: 2px; }
+  .mandje-item .verwijder {
+    background: none; border: none; color: #b33; cursor: pointer; padding: 0 0 0 8px; margin: 0; font-size: 0.85rem;
+  }
   .zijbalk .totaal {
     margin-top: 10px;
     padding-top: 10px;
@@ -59,27 +64,14 @@
     font-weight: 700;
   }
   .zijbalk .placeholder { color: #999; font-size: 0.85rem; }
-  .zijbalk .groepslijst { margin-top: 6px; font-size: 0.85rem; }
-  .zijbalk .groepslijst div { padding: 2px 0; }
-  .splits-badge {
-    display: inline-block;
-    margin-top: 8px;
-    padding: 2px 8px;
-    border-radius: 12px;
-    background: #fdf1d6;
-    color: #8a6a1e;
-    font-size: 0.75rem;
-  }
 
-  fieldset {
+  .kaart {
     border: 1px solid var(--border);
     border-radius: 8px;
     padding: 16px;
     margin-bottom: 20px;
     background: white;
   }
-  fieldset[disabled] { opacity: 0.5; }
-  legend { font-weight: 600; padding: 0 6px; }
   label { display: block; margin-top: 12px; margin-bottom: 4px; font-size: 0.9rem; }
   input, select {
     width: 100%;
@@ -97,9 +89,42 @@
     font-size: 1rem;
     cursor: pointer;
     margin-top: 12px;
+    margin-right: 8px;
   }
   button:disabled { opacity: 0.5; cursor: not-allowed; }
   button.secundair { background: white; color: var(--accent); border: 1px solid var(--accent); }
+  button.tekstlink { background: none; color: var(--accent); text-decoration: underline; padding: 0; margin: 12px 0 0; font-size: 0.85rem; }
+
+  .scherm[hidden] { display: none; }
+
+  .activiteiten-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 12px;
+    margin: 12px 0 24px;
+  }
+  .activiteit-tegel {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: white;
+    padding: 14px;
+    cursor: pointer;
+    text-align: left;
+  }
+  .activiteit-tegel:hover { border-color: var(--accent); }
+  .activiteit-tegel .naam { font-weight: 600; }
+  .activiteit-tegel .details { color: #666; font-size: 0.85rem; margin-top: 4px; }
+  .activiteit-tegel .prijs { color: var(--accent); font-size: 0.85rem; margin-top: 6px; }
+
+  .placeholder-sectie {
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+    padding: 14px;
+    color: #888;
+    font-size: 0.9rem;
+    margin-bottom: 20px;
+  }
+  .sectiekop { font-weight: 600; margin: 24px 0 4px; font-size: 1rem; }
 
   .slots {
     display: flex;
@@ -125,45 +150,84 @@
     background: #fafafa;
   }
 
-  #resultaat {
-    margin-top: 20px;
-    padding: 14px;
-    border-radius: 8px;
+  .deelgroep-blok {
+    border-top: 1px solid var(--border);
+    margin-top: 14px;
+    padding-top: 10px;
   }
+  .deelgroep-blok label.checkboxlabel { display: flex; align-items: center; gap: 8px; margin-top: 0; }
+  .deelgroep-blok label.checkboxlabel input { width: auto; }
+
+  #resultaat { margin-top: 20px; padding: 14px; border-radius: 8px; }
   #resultaat.ok { background: #e5f4ee; border: 1px solid #9fd3bf; }
   #resultaat.fout { background: #fbeaea; border: 1px solid #e5a9a9; }
   .hint { font-size: 0.85rem; color: #888; margin-top: 6px; }
+  .foutmelding { font-size: 0.9rem; color: #b33; margin-top: 8px; }
 </style>
 </head>
 <body>
   <div class="layout">
     <div class="hoofd">
-      <h1>Testboekproces</h1>
-      <p class="subtitle">Los prototype dat rechtstreeks tegen de Recras API praat, inclusief automatische groep-splitsing bij overboeking.</p>
+      <h1>Boek je bezoek</h1>
+      <p class="subtitle">Prototype boekproces dat rechtstreeks tegen de Recras API praat.</p>
 
-      <fieldset id="stap1">
-        <legend>1. Activiteit en aantal personen</legend>
-        <label for="product">Activiteit</label>
-        <select id="product"></select>
+      <!-- SCHERM A: aantal personen + datum voor het hele bezoek -->
+      <section id="schermA" class="scherm kaart">
+        <h2 class="schermtitel">Wanneer kom je, en met hoeveel personen?</h2>
+        <label for="aInputAantal">Aantal personen</label>
+        <input type="number" id="aInputAantal" min="1" value="10" />
 
-        <label for="aantal">Aantal personen</label>
-        <input type="number" id="aantal" min="1" value="1" />
+        <label for="aInputDatum">Datum</label>
+        <input type="date" id="aInputDatum" />
 
-        <button id="naarStap2Btn" type="button">Volgende: datum en tijd kiezen</button>
-      </fieldset>
+        <button id="aVolgendeBtn" type="button">Activiteiten bekijken</button>
+        <div id="aFout" class="foutmelding"></div>
+      </section>
 
-      <fieldset id="stap2" disabled>
-        <legend>2. Datum en tijd</legend>
-        <label for="datum">Datum</label>
-        <input type="date" id="datum" />
+      <!-- SCHERM B: activiteitenoverzicht -->
+      <section id="schermB" class="scherm" hidden>
+        <div class="kaart">
+          <h2 class="schermtitel">Kies je activiteiten</h2>
+          <p class="hint" id="bBezoekInfo"></p>
+          <button class="tekstlink" id="bWijzigBezoekBtn" type="button">Aantal of datum wijzigen</button>
+        </div>
 
-        <button id="zoekBtn" type="button">Zoek beschikbaarheid</button>
+        <div class="sectiekop">Losse activiteiten</div>
+        <div class="activiteiten-grid" id="activiteitenGrid"></div>
 
-        <div id="planResultaat"></div>
-      </fieldset>
+        <div class="sectiekop">Combideals</div>
+        <div class="placeholder-sectie">Binnenkort beschikbaar - combideals voegen we later toe aan dit boekproces.</div>
 
-      <fieldset id="stap3" disabled>
-        <legend>3. Gegevens</legend>
+        <div class="sectiekop">Activiteitendeals</div>
+        <div class="placeholder-sectie">Binnenkort beschikbaar - activiteitendeals voegen we later toe aan dit boekproces.</div>
+
+        <button id="bNaarGegevensBtn" type="button" disabled>Boeking afronden</button>
+      </section>
+
+      <!-- SCHERM C: 1 activiteit boeken -->
+      <section id="schermC" class="scherm kaart" hidden>
+        <button class="tekstlink" id="cTerugBtn" type="button">&larr; Terug naar activiteiten</button>
+        <h2 class="schermtitel" id="cTitel"></h2>
+
+        <div class="deelgroep-blok" id="cDeelgroepBlok" hidden>
+          <label class="checkboxlabel">
+            <input type="checkbox" id="cDeelgroepCheckbox" />
+            <span>Slechts een deel van de groep doet deze activiteit</span>
+          </label>
+          <div id="cDeelgroepAantalWrap" hidden>
+            <label for="cDeelgroepAantal">Aantal personen voor deze activiteit</label>
+            <input type="number" id="cDeelgroepAantal" min="1" />
+          </div>
+        </div>
+
+        <div id="cPlanResultaat"></div>
+      </section>
+
+      <!-- SCHERM D: klantgegevens -->
+      <section id="schermD" class="scherm kaart" hidden>
+        <button class="tekstlink" id="dTerugBtn" type="button">&larr; Terug naar activiteiten</button>
+        <h2 class="schermtitel">Jouw gegevens</h2>
+
         <label for="voornaam">Voornaam</label>
         <input type="text" id="voornaam" />
 
@@ -177,148 +241,287 @@
         <input type="tel" id="telefoon" />
 
         <button id="boekBtn" type="button">Boeking bevestigen</button>
-      </fieldset>
+        <div id="resultaat" style="display:none;"></div>
+      </section>
 
-      <div id="resultaat" style="display:none;"></div>
+      <!-- SCHERM E: bevestiging -->
+      <section id="schermE" class="scherm kaart" hidden>
+        <h2 class="schermtitel">Boeking bevestigd</h2>
+        <div id="eInhoud"></div>
+      </section>
     </div>
 
-    <div class="zijbalk">
+    <div class="zijbalk" id="zijbalk" hidden>
       <h2>Boekingsoverzicht</h2>
-      <div id="zijbalkInhoud">
-        <p class="placeholder">Vul de activiteit en het aantal personen in om een prijsindicatie te zien.</p>
-      </div>
+      <div id="zijbalkInhoud"></div>
     </div>
   </div>
 
 <script>
-  const productSelect = document.getElementById('product');
-  const aantalInput = document.getElementById('aantal');
-  const naarStap2Btn = document.getElementById('naarStap2Btn');
-  const stap2 = document.getElementById('stap2');
-  const stap3 = document.getElementById('stap3');
-  const datumInput = document.getElementById('datum');
-  const zoekBtn = document.getElementById('zoekBtn');
-  const planResultaat = document.getElementById('planResultaat');
-  const boekBtn = document.getElementById('boekBtn');
-  const resultaatEl = document.getElementById('resultaat');
-  const zijbalkInhoud = document.getElementById('zijbalkInhoud');
-
+  // ---------------------------------------------------------------------
+  // Status
+  // ---------------------------------------------------------------------
   let producten = [];
-  let huidigPlan = null; // laatste succesvolle plan-respons van de server
+  let mandje = null; // { mandjeId, aantal, datum, items, totaalPrijs }
+  let huidigeSlug = null;
+  let huidigPlan = null;
+  let gekozenGroepen = null;
+  let laatsteKiesStarttijdPlan = null;
+  let huidigDeelgroepAantal = null;
 
-  datumInput.valueAsDate = new Date();
+  const schermen = ['schermA', 'schermB', 'schermC', 'schermD', 'schermE'];
+  function toonScherm(id) {
+    schermen.forEach((s) => {
+      document.getElementById(s).hidden = s !== id;
+    });
+    document.getElementById('zijbalk').hidden = id === 'schermA';
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function euro(bedrag) {
+    if (bedrag == null) return 'onbekend';
+    return new Intl.NumberFormat('nl-NL', { style: 'currency', currency: 'EUR' }).format(bedrag);
+  }
+  function tijdNotatie(iso) {
+    return new Date(iso).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' });
+  }
+  function datumNotatie(datum) {
+    return new Date(`${datum}T00:00:00`).toLocaleDateString('nl-NL', { weekday: 'long', day: 'numeric', month: 'long' });
+  }
+
+  // ---------------------------------------------------------------------
+  // Mandje ophalen/opslaan (mandjeId blijft bewaard in localStorage zodat
+  // een pagina-herlaad het lopende bezoek niet meteen kwijtraakt)
+  // ---------------------------------------------------------------------
+  async function initMandje() {
+    const opgeslagenId = localStorage.getItem('mandjeId');
+    if (opgeslagenId) {
+      try {
+        const res = await fetch(`/api/mandje/${opgeslagenId}`);
+        if (res.ok) {
+          mandje = await res.json();
+          document.getElementById('aInputAantal').value = mandje.aantal;
+          document.getElementById('aInputDatum').value = mandje.datum;
+          await laadProducten();
+          renderZijbalk();
+          toonScherm('schermB');
+          return;
+        }
+      } catch (err) {
+        // negeren, val terug op nieuw bezoek
+      }
+      localStorage.removeItem('mandjeId');
+    }
+    const morgen = new Date();
+    morgen.setDate(morgen.getDate() + 1);
+    document.getElementById('aInputDatum').value = morgen.toISOString().slice(0, 10);
+    document.getElementById('aInputDatum').min = new Date().toISOString().slice(0, 10);
+    toonScherm('schermA');
+  }
 
   async function laadProducten() {
     const res = await fetch('/api/producten');
     producten = await res.json();
-    productSelect.innerHTML = producten
-      .map((p) => `<option value="${p.slug}">${p.naam} (${p.duur_minuten} min)</option>`)
-      .join('');
-    verversZijbalk();
   }
 
-  function huidigProduct() {
-    return producten.find((p) => p.slug === productSelect.value);
+  function renderZijbalk() {
+    const el = document.getElementById('zijbalkInhoud');
+    if (!mandje) { el.innerHTML = ''; return; }
+
+    let html = `<div class="bezoekinfo">${mandje.aantal} personen &middot; ${datumNotatie(mandje.datum)}</div>`;
+
+    if (mandje.items.length === 0) {
+      html += '<p class="placeholder">Nog geen activiteiten toegevoegd.</p>';
+    } else {
+      mandje.items.forEach((item) => {
+        const tijden = item.groepen
+          .map((g) => (item.groepen.length > 1 ? `${g.aantal}p om ${tijdNotatie(g.begin)}` : tijdNotatie(g.begin)))
+          .join(', ');
+        html += `
+          <div class="mandje-item">
+            <div class="regelkop">
+              <strong>${item.naam}</strong>
+              <button class="verwijder" data-item="${item.id}" title="Verwijderen">&times;</button>
+            </div>
+            <div class="tijden">${item.aantal} personen${item.deelgroep ? ' (deel van de groep)' : ''} &middot; ${tijden}</div>
+            <div class="tijden">${item.subtotaal != null ? euro(item.subtotaal) : 'prijs onbekend'}</div>
+          </div>
+        `;
+      });
+      html += `<div class="totaal"><span>Totaal</span><span>${euro(mandje.totaalPrijs)}</span></div>`;
+    }
+
+    el.innerHTML = html;
+    el.querySelectorAll('.verwijder').forEach((btn) => {
+      btn.addEventListener('click', () => verwijderItem(btn.dataset.item));
+    });
   }
 
-  function euro(bedrag) {
-    if (bedrag == null) return '-';
-    return new Intl.NumberFormat('nl-NL', { style: 'currency', currency: 'EUR' }).format(bedrag);
+  async function verwijderItem(itemId) {
+    const res = await fetch(`/api/mandje/${mandje.mandjeId}/items/${itemId}`, { method: 'DELETE' });
+    if (res.ok) {
+      mandje = await res.json();
+      renderZijbalk();
+      renderActiviteitenKnop();
+    }
   }
 
-  function tijdNotatie(iso) {
-    return new Date(iso).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' });
+  function renderActiviteitenKnop() {
+    document.getElementById('bNaarGegevensBtn').disabled = !mandje || mandje.items.length === 0;
   }
 
-  // Zijbalk toont altijd de actuele stand: gekozen activiteit, aantal,
-  // prijsindicatie, en zodra bekend de voorgestelde tijd(en).
-  function verversZijbalk() {
-    const product = huidigProduct();
-    const aantal = parseInt(aantalInput.value, 10) || 0;
+  // ---------------------------------------------------------------------
+  // SCHERM A
+  // ---------------------------------------------------------------------
+  document.getElementById('aVolgendeBtn').addEventListener('click', async () => {
+    const aantal = parseInt(document.getElementById('aInputAantal').value, 10);
+    const datum = document.getElementById('aInputDatum').value;
+    const foutEl = document.getElementById('aFout');
+    foutEl.textContent = '';
 
-    if (!product) {
-      zijbalkInhoud.innerHTML = '<p class="placeholder">Activiteiten worden geladen...</p>';
+    if (!aantal || aantal < 1 || !datum) {
+      foutEl.textContent = 'Vul een geldig aantal personen en een datum in.';
       return;
     }
 
-    let html = `
-      <div class="regel"><span>Activiteit</span><strong>${product.naam}</strong></div>
-      <div class="regel"><span>Aantal personen</span><strong>${aantal}</strong></div>
-    `;
+    try {
+      const res = await fetch('/api/mandje/instellen', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mandjeId: mandje?.mandjeId, aantal, datum }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Onbekende fout');
 
-    if (product.prijs_per_persoon != null) {
-      html += `<div class="regel"><span>Prijs per persoon</span><span>${euro(product.prijs_per_persoon)}</span></div>`;
+      mandje = data;
+      localStorage.setItem('mandjeId', mandje.mandjeId);
+      await laadProducten();
+      renderActiviteitenPagina();
+      renderZijbalk();
+      toonScherm('schermB');
+    } catch (err) {
+      foutEl.textContent = 'Kon bezoek niet instellen: ' + err.message;
     }
+  });
 
-    if (huidigPlan && huidigPlan.plan) {
-      const { plan } = huidigPlan;
-      if (plan.status === 'gesplitst') {
-        html += `<span class="splits-badge">Groep wordt gesplitst</span>`;
-        html += '<div class="groepslijst">';
-        plan.groepen.forEach((g, i) => {
-          html += `<div>Groep ${i + 1}: ${g.aantal} pers. om ${tijdNotatie(g.startmoment)}</div>`;
-        });
-        html += '</div>';
-      } else if (plan.status === 'enkel' && plan.opties && plan.opties.length) {
-        html += `<p class="hint">Kies hiernaast nog een tijd uit ${plan.opties.length} mogelijke momenten.</p>`;
-      } else if (plan.status === 'kies_starttijd') {
-        html += `<span class="splits-badge">Groep wordt gesplitst</span>`;
-        html += `<p class="hint">Kies hiernaast de starttijd van groep 1 (${plan.groepsgroottes.join(' + ')} personen).</p>`;
-      } else if (plan.status === 'onmogelijk') {
-        html += `<p class="hint">${plan.reden}</p>`;
-      }
-    }
+  // ---------------------------------------------------------------------
+  // SCHERM B: activiteitenoverzicht
+  // ---------------------------------------------------------------------
+  function renderActiviteitenPagina() {
+    document.getElementById('bBezoekInfo').textContent =
+      `${mandje.aantal} personen op ${datumNotatie(mandje.datum)}.`;
 
-    if (huidigPlan && huidigPlan.totale_prijs != null) {
-      html += `<div class="totaal"><span>Totaal (indicatie)</span><span>${euro(huidigPlan.totale_prijs)}</span></div>`;
-    }
+    const grid = document.getElementById('activiteitenGrid');
+    grid.innerHTML = producten
+      .map((p) => {
+        const prijsHtml = p.prijs_per_persoon != null
+          ? `${euro(p.prijs_per_persoon)} p.p.`
+          : (p.prijs_fout ? 'prijs kon niet opgehaald worden' : 'prijs onbekend');
+        return `
+          <button type="button" class="activiteit-tegel" data-slug="${p.slug}">
+            <div class="naam">${p.naam}</div>
+            <div class="details">${p.duur_minuten ? p.duur_minuten + ' min' : ''}${p.eenheid_naam ? ' &middot; per ' + p.eenheid_naam : ''}</div>
+            <div class="prijs">${prijsHtml}</div>
+          </button>
+        `;
+      })
+      .join('');
 
-    zijbalkInhoud.innerHTML = html;
+    grid.querySelectorAll('.activiteit-tegel').forEach((el) => {
+      el.addEventListener('click', () => openActiviteit(el.dataset.slug));
+    });
+
+    renderActiviteitenKnop();
   }
 
-  function naarStap2() {
-    stap2.disabled = false;
-    stap2.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    verversZijbalk();
+  document.getElementById('bWijzigBezoekBtn').addEventListener('click', () => {
+    toonScherm('schermA');
+  });
+
+  document.getElementById('bNaarGegevensBtn').addEventListener('click', () => {
+    toonScherm('schermD');
+  });
+
+  // ---------------------------------------------------------------------
+  // SCHERM C: 1 activiteit boeken
+  // ---------------------------------------------------------------------
+  function huidigProduct() {
+    return producten.find((p) => p.slug === huidigeSlug);
+  }
+
+  function openActiviteit(slug) {
+    huidigeSlug = slug;
+    huidigPlan = null;
+    gekozenGroepen = null;
+    laatsteKiesStarttijdPlan = null;
+    huidigDeelgroepAantal = null;
+
+    const product = huidigProduct();
+    document.getElementById('cTitel').textContent = product.naam;
+
+    const deelgroepBlok = document.getElementById('cDeelgroepBlok');
+    const checkbox = document.getElementById('cDeelgroepCheckbox');
+    const aantalWrap = document.getElementById('cDeelgroepAantalWrap');
+    const aantalInput = document.getElementById('cDeelgroepAantal');
+    checkbox.checked = false;
+    aantalWrap.hidden = true;
+    aantalInput.value = mandje.aantal;
+    aantalInput.max = mandje.aantal;
+    deelgroepBlok.hidden = !product.toestaan_deelgroep || mandje.aantal <= 1;
+
+    toonScherm('schermC');
+    zoekPlanning();
+  }
+
+  document.getElementById('cTerugBtn').addEventListener('click', () => {
+    toonScherm('schermB');
+  });
+
+  document.getElementById('cDeelgroepCheckbox').addEventListener('change', (e) => {
+    document.getElementById('cDeelgroepAantalWrap').hidden = !e.target.checked;
+    if (!e.target.checked) {
+      document.getElementById('cDeelgroepAantal').value = mandje.aantal;
+    }
+    zoekPlanning();
+  });
+  document.getElementById('cDeelgroepAantal').addEventListener('change', zoekPlanning);
+
+  function huidigAantalVoorActiviteit() {
+    const checkbox = document.getElementById('cDeelgroepCheckbox');
+    if (checkbox.checked) {
+      const waarde = parseInt(document.getElementById('cDeelgroepAantal').value, 10);
+      return waarde && waarde >= 1 && waarde <= mandje.aantal ? waarde : mandje.aantal;
+    }
+    return mandje.aantal;
   }
 
   async function zoekPlanning() {
+    const planResultaat = document.getElementById('cPlanResultaat');
     huidigPlan = null;
-    stap3.disabled = true;
+    gekozenGroepen = null;
     planResultaat.innerHTML = '<p class="hint">Bezig met laden...</p>';
-    verversZijbalk();
 
-    const slug = productSelect.value;
-    const aantal = parseInt(aantalInput.value, 10);
-    const datum = datumInput.value;
+    const aantal = huidigAantalVoorActiviteit();
+    huidigDeelgroepAantal = aantal;
 
     try {
-      const res = await fetch(`/api/plan/${slug}?datum=${datum}&aantal=${aantal}`);
+      const res = await fetch(`/api/activiteit/${huidigeSlug}/plan?mandjeId=${mandje.mandjeId}&aantal=${aantal}`);
       const data = await res.json();
-      if (!res.ok) {
-        const detail = data.details ? ' - ' + JSON.stringify(data.details) : '';
-        throw new Error((data.error || 'Onbekende fout') + detail);
-      }
+      if (!res.ok) throw new Error((data.error || 'Onbekende fout'));
 
       huidigPlan = data;
       renderPlan(data.plan);
-      verversZijbalk();
     } catch (err) {
-      planResultaat.innerHTML = `<p class="hint">Fout bij ophalen: ${err.message}</p>`;
+      planResultaat.innerHTML = `<p class="foutmelding">Fout bij ophalen: ${err.message}</p>`;
     }
   }
 
-  // Bewaart welke tijd(en) definitief gekozen zijn, klaar om te boeken.
-  let gekozenGroepen = null;
-  // Bewaart de laatste "kies_starttijd"-stap, zodat we de tijdkeuze voor
-  // groep 1 opnieuw kunnen tonen als het vervolgschema niet uitkomt.
-  let laatsteKiesStarttijdPlan = null;
-
   function renderPlan(plan) {
+    const planResultaat = document.getElementById('cPlanResultaat');
     gekozenGroepen = null;
 
     if (plan.status === 'onmogelijk') {
-      planResultaat.innerHTML = `<p class="hint">${plan.reden}</p>`;
+      planResultaat.innerHTML = `<p class="foutmelding">${plan.reden}</p>`;
       return;
     }
 
@@ -328,40 +531,33 @@
       return;
     }
 
-    // status === 'enkel': normale tijdkeuze, groep past in 1 moment
     if (!plan.opties.length) {
       planResultaat.innerHTML = '<p class="hint">Geen geschikte tijden gevonden op deze dag voor dit aantal personen.</p>';
       return;
     }
 
     const slotsHtml = plan.opties
-      .map(
-        (optie) =>
-          `<div class="slot" data-moment="${optie.startmoment}">${tijdNotatie(optie.startmoment)} (${optie.beschikbaarheid} vrij)</div>`
-      )
+      .map((optie) => `<div class="slot" data-moment="${optie.startmoment}">${tijdNotatie(optie.startmoment)}</div>`)
       .join('');
 
-    planResultaat.innerHTML = `<p class="hint">Kies een tijd:</p><div class="slots">${slotsHtml}</div>`;
+    planResultaat.innerHTML = `<p class="hint">Kies een tijd:</p><div class="slots">${slotsHtml}</div><div id="cBevestigWrap"></div>`;
 
     planResultaat.querySelectorAll('.slot').forEach((el) => {
       el.addEventListener('click', () => {
         planResultaat.querySelectorAll('.slot').forEach((s) => s.classList.remove('selected'));
         el.classList.add('selected');
-        const aantal = parseInt(aantalInput.value, 10);
-        gekozenGroepen = [{ aantal, begin: el.dataset.moment }];
-        stap3.disabled = false;
-        stap3.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        gekozenGroepen = [{ aantal: huidigDeelgroepAantal, begin: el.dataset.moment }];
+        document.getElementById('cBevestigWrap').innerHTML =
+          '<button id="cToevoegenBtn" type="button">Toevoegen aan planning</button>';
+        document.getElementById('cToevoegenBtn').addEventListener('click', voegToeAanMandje);
       });
     });
   }
 
-  // Toont de melding + tijdkeuze voor groep 1 van een gesplitste groep.
   function renderKiesStarttijd(plan) {
+    const planResultaat = document.getElementById('cPlanResultaat');
     const slotsHtml = plan.opties
-      .map(
-        (optie) =>
-          `<div class="slot" data-moment="${optie.startmoment}">${tijdNotatie(optie.startmoment)} (${optie.beschikbaarheid} vrij)</div>`
-      )
+      .map((optie) => `<div class="slot" data-moment="${optie.startmoment}">${tijdNotatie(optie.startmoment)}</div>`)
       .join('');
 
     planResultaat.innerHTML = `
@@ -374,42 +570,34 @@
     });
   }
 
-  // Nadat groep 1 gekozen is: vraagt de server het optimale vervolgschema
-  // voor de overige subgroepen op, en toont dat ter bevestiging.
   async function haalVervolgSchemaOp(gekozenStart) {
+    const planResultaat = document.getElementById('cPlanResultaat');
     planResultaat.innerHTML = '<p class="hint">Bezig met plannen...</p>';
-
-    const slug = productSelect.value;
-    const aantal = parseInt(aantalInput.value, 10);
-    const datum = datumInput.value;
 
     try {
       const res = await fetch(
-        `/api/plan-vervolg/${slug}?datum=${datum}&aantal=${aantal}&start=${encodeURIComponent(gekozenStart)}`
+        `/api/activiteit/${huidigeSlug}/plan-vervolg?mandjeId=${mandje.mandjeId}&aantal=${huidigDeelgroepAantal}&start=${encodeURIComponent(gekozenStart)}`
       );
       const data = await res.json();
-      if (!res.ok) {
-        const detail = data.details ? ' - ' + JSON.stringify(data.details) : '';
-        throw new Error((data.error || 'Onbekende fout') + detail);
-      }
+      if (!res.ok) throw new Error(data.error || 'Onbekende fout');
 
       huidigPlan = data;
       renderVervolgSchema(data.plan);
-      verversZijbalk();
     } catch (err) {
-      planResultaat.innerHTML = `<p class="hint">Fout bij plannen: ${err.message}</p>`;
+      planResultaat.innerHTML = `<p class="foutmelding">Fout bij plannen: ${err.message}</p>`;
     }
   }
 
-  // Toont het volledige voorgestelde schema (alle subgroepen) ter bevestiging.
   function renderVervolgSchema(plan) {
+    const planResultaat = document.getElementById('cPlanResultaat');
     gekozenGroepen = null;
 
     if (plan.status === 'onmogelijk') {
-      let html = `<p class="hint">${plan.reden}</p>`;
-      html += `<button id="anderStartBtn" type="button" class="secundair">Kies een andere starttijd voor groep 1</button>`;
-      planResultaat.innerHTML = html;
-      document.getElementById('anderStartBtn').addEventListener('click', () => {
+      planResultaat.innerHTML = `
+        <p class="foutmelding">${plan.reden}</p>
+        <button id="cAnderStartBtn" type="button" class="secundair">Kies een andere starttijd voor groep 1</button>
+      `;
+      document.getElementById('cAnderStartBtn').addEventListener('click', () => {
         if (laatsteKiesStarttijdPlan) renderKiesStarttijd(laatsteKiesStarttijdPlan);
       });
       return;
@@ -417,41 +605,55 @@
 
     let html = '<p class="hint">Voorgesteld tijdschema:</p>';
     plan.groepen.forEach((g, i) => {
-      html += `
-        <div class="voorstel-groep">
-          <strong>Groep ${i + 1}</strong> - ${g.aantal} personen om ${tijdNotatie(g.startmoment)}
-        </div>
-      `;
+      html += `<div class="voorstel-groep"><strong>Groep ${i + 1}</strong> - ${g.aantal} personen om ${tijdNotatie(g.startmoment)}</div>`;
     });
-    html += `<button id="bevestigVoorstelBtn" type="button">Voorstel bevestigen</button>`;
-    html += `<button id="anderStartBtn" type="button" class="secundair">Kies een andere starttijd voor groep 1</button>`;
+    html += `<button id="cToevoegenBtn" type="button">Voorstel toevoegen aan planning</button>`;
+    html += `<button id="cAnderStartBtn" type="button" class="secundair">Kies een andere starttijd voor groep 1</button>`;
     planResultaat.innerHTML = html;
 
-    document.getElementById('bevestigVoorstelBtn').addEventListener('click', () => {
+    document.getElementById('cToevoegenBtn').addEventListener('click', () => {
       gekozenGroepen = plan.groepen.map((g) => ({ aantal: g.aantal, begin: g.startmoment }));
-      stap3.disabled = false;
-      stap3.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      voegToeAanMandje();
     });
-    document.getElementById('anderStartBtn').addEventListener('click', () => {
+    document.getElementById('cAnderStartBtn').addEventListener('click', () => {
       if (laatsteKiesStarttijdPlan) renderKiesStarttijd(laatsteKiesStarttijdPlan);
     });
   }
 
-  async function boekAf() {
-    resultaatEl.style.display = 'none';
+  async function voegToeAanMandje() {
+    if (!gekozenGroepen) return;
+    const planResultaat = document.getElementById('cPlanResultaat');
 
-    if (!gekozenGroepen) {
-      resultaatEl.className = 'fout';
-      resultaatEl.textContent = 'Kies eerst een tijd (of bevestig het groepsvoorstel) voordat je boekt.';
-      resultaatEl.style.display = 'block';
-      return;
+    try {
+      const res = await fetch(`/api/mandje/${mandje.mandjeId}/toevoegen`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ slug: huidigeSlug, aantal: huidigDeelgroepAantal, groepen: gekozenGroepen }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Onbekende fout');
+
+      mandje = data;
+      renderZijbalk();
+      renderActiviteitenKnop();
+      toonScherm('schermB');
+    } catch (err) {
+      planResultaat.innerHTML += `<p class="foutmelding">Kon niet toevoegen: ${err.message}</p>`;
     }
+  }
 
+  // ---------------------------------------------------------------------
+  // SCHERM D: gegevens + boeken
+  // ---------------------------------------------------------------------
+  document.getElementById('dTerugBtn').addEventListener('click', () => toonScherm('schermB'));
+
+  document.getElementById('boekBtn').addEventListener('click', async () => {
+    const resultaatEl = document.getElementById('resultaat');
+    const boekBtn = document.getElementById('boekBtn');
+    resultaatEl.style.display = 'none';
     boekBtn.disabled = true;
 
     const payload = {
-      slug: productSelect.value,
-      groepen: gekozenGroepen,
       klant: {
         voornaam: document.getElementById('voornaam').value,
         achternaam: document.getElementById('achternaam').value,
@@ -461,44 +663,54 @@
     };
 
     try {
-      const res = await fetch('/api/boeking-groep', {
+      const res = await fetch(`/api/mandje/${mandje.mandjeId}/boeken`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
       const data = await res.json();
-      if (!res.ok) {
-        const detail = data.details ? ' - ' + JSON.stringify(data.details) : '';
-        throw new Error((data.error || 'Onbekende fout') + detail);
+
+      if (res.status === 409 && data.ongeldigItemId) {
+        // Plek niet meer beschikbaar: item verwijderen en terug naar het overzicht.
+        await fetch(`/api/mandje/${mandje.mandjeId}/items/${data.ongeldigItemId}`, { method: 'DELETE' });
+        const opnieuw = await fetch(`/api/mandje/${mandje.mandjeId}`);
+        mandje = await opnieuw.json();
+        renderZijbalk();
+        renderActiviteitenKnop();
+        toonScherm('schermB');
+        alert(data.error + ' Kies een nieuw tijdstip voor deze activiteit.');
+        return;
       }
 
-      const boeking = data.boeking;
-      const regelsHtml = (boeking.boekingsregels || [])
-        .map((r) => `- ${r.aantal} personen om ${tijdNotatie(r.begin)}`)
-        .join('<br>');
+      if (!res.ok) throw new Error(data.error || 'Onbekende fout');
 
-      resultaatEl.className = 'ok';
-      resultaatEl.innerHTML = `
-        <strong>Boeking gelukt!</strong> (boekingsnummer ${boeking.id})<br />
-        ${regelsHtml}<br />
-        Klant: ${data.klant.displaynaam || data.klant.naam} (${data.nieuweKlant ? 'nieuw aangemaakt' : 'bestaande klant hergebruikt'})
-      `;
+      renderBevestiging(data);
+      localStorage.removeItem('mandjeId');
+      toonScherm('schermE');
     } catch (err) {
       resultaatEl.className = 'fout';
       resultaatEl.textContent = 'Boeking mislukt: ' + err.message;
-    } finally {
       resultaatEl.style.display = 'block';
+    } finally {
       boekBtn.disabled = false;
     }
+  });
+
+  function renderBevestiging(data) {
+    const boeking = data.boeking;
+    const regelsHtml = (boeking.boekingsregels || [])
+      .map((r) => `<li>${r.aantal} personen &middot; ${r.opmerking || ''} &middot; ${tijdNotatie(r.begin)}</li>`)
+      .join('');
+
+    document.getElementById('eInhoud').innerHTML = `
+      <p><strong>Boekingsnummer:</strong> ${boeking.id}</p>
+      <p><strong>Klant:</strong> ${data.klant.displaynaam || data.klant.naam} (${data.nieuweKlant ? 'nieuw aangemaakt' : 'bestaande klant hergebruikt'})</p>
+      <ul>${regelsHtml}</ul>
+    `;
+    document.getElementById('zijbalk').hidden = true;
   }
 
-  productSelect.addEventListener('change', verversZijbalk);
-  aantalInput.addEventListener('input', verversZijbalk);
-  naarStap2Btn.addEventListener('click', naarStap2);
-  zoekBtn.addEventListener('click', zoekPlanning);
-  boekBtn.addEventListener('click', boekAf);
-
-  laadProducten();
+  initMandje();
 </script>
 </body>
 </html>

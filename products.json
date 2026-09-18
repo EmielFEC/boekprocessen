@@ -1,13 +1,123 @@
 {
-  "_comment": "Elke sleutel is een eigen 'slug' die je in de website-URL of widget gebruikt (bijv. /api/beschikbaarheid/springkussen). Voeg hier straks andere producten of bookprocessen aan toe zonder de servercode te wijzigen.",
+  "_comment": "Losse activiteiten voor het nieuwe boekproces. Prijzen worden NIET meer hier beheerd maar live opgehaald uit Recras (zie recras.js: haalPrijsPerPersoon). 'per_eenheid_personen' is hoeveel personen er in 1 'eenheid' (baan/tafel/sessie) passen - bij per-persoon activiteiten is dit 1. 'toestaan_deelgroep' bepaalt of een klant een kleiner aantal dan de totale bezoekersgroep mag opgeven voor deze activiteit (bijv. Lasergame: 'een deel van de groep doet dit'). 'actief: false' = nog niet klaar voor gebruik, wordt niet getoond. 'volgorde' bepaalt de weergavevolgorde op de activiteitenpagina.",
+
+  "bowling": {
+    "product_id": 194,
+    "naam": "Bowling",
+    "duur_minuten": 55,
+    "per_eenheid_personen": 7,
+    "eenheid_naam": "baan",
+    "toestaan_deelgroep": true,
+    "volgorde": 1,
+    "actief": true,
+    "locatie_id": null,
+    "book_process_id": null
+  },
+
+  "lasergame": {
+    "product_id": 8,
+    "naam": "Lasergame",
+    "duur_minuten": 30,
+    "per_eenheid_personen": 1,
+    "eenheid_naam": null,
+    "toestaan_deelgroep": true,
+    "volgorde": 2,
+    "actief": true,
+    "locatie_id": null,
+    "book_process_id": null
+  },
+
+  "american-golf": {
+    "product_id": 89,
+    "naam": "American Golf",
+    "duur_minuten": 60,
+    "per_eenheid_personen": 1,
+    "eenheid_naam": null,
+    "toestaan_deelgroep": true,
+    "volgorde": 3,
+    "actief": true,
+    "locatie_id": null,
+    "book_process_id": null
+  },
+
+  "game-area": {
+    "product_id": null,
+    "_todo": "Product-ID nog niet bekend - Emiel moet aangeven welk Recras-product 'Game Area' is (en of dit tijdgebonden is met een startmomentgroep, of bijv. per token/losse aankoop werkt). Tot die tijd staat dit product op actief:false en wordt het niet getoond.",
+    "naam": "Game Area",
+    "duur_minuten": null,
+    "per_eenheid_personen": 1,
+    "eenheid_naam": null,
+    "toestaan_deelgroep": true,
+    "volgorde": 4,
+    "actief": false,
+    "locatie_id": null,
+    "book_process_id": null
+  },
+
+  "fun-curling": {
+    "product_id": 94,
+    "naam": "Fun Curling",
+    "duur_minuten": 55,
+    "per_eenheid_personen": 6,
+    "eenheid_naam": "baan",
+    "toestaan_deelgroep": true,
+    "volgorde": 5,
+    "actief": true,
+    "locatie_id": null,
+    "book_process_id": null
+  },
+
+  "x-cube-30": {
+    "product_id": 189,
+    "naam": "X-Cube (30 min.)",
+    "duur_minuten": 30,
+    "per_eenheid_personen": 1,
+    "eenheid_naam": null,
+    "toestaan_deelgroep": true,
+    "volgorde": 6,
+    "actief": true,
+    "locatie_id": null,
+    "book_process_id": null
+  },
+
+  "x-cube-60": {
+    "product_id": 190,
+    "naam": "X-Cube (60 min.)",
+    "duur_minuten": 60,
+    "per_eenheid_personen": 1,
+    "eenheid_naam": null,
+    "toestaan_deelgroep": true,
+    "volgorde": 7,
+    "actief": true,
+    "locatie_id": null,
+    "book_process_id": null
+  },
+
+  "x-wall": {
+    "product_id": 104,
+    "naam": "X-Wall",
+    "duur_minuten": 30,
+    "per_eenheid_personen": 8,
+    "eenheid_naam": "sessie",
+    "_eenheid_comment": "In Recras staat dit product op 'aantalbepaling: vast' i.p.v. 'boekingsgrootte' - de betekenis van 'per X personen: 8' hierbij is nog niet live geverifieerd (zie README).",
+    "toestaan_deelgroep": true,
+    "volgorde": 8,
+    "actief": true,
+    "locatie_id": null,
+    "book_process_id": null
+  },
 
   "springkussen": {
     "product_id": 1859,
     "naam": "Springkussen (TEST)",
     "duur_minuten": 15,
+    "per_eenheid_personen": 1,
+    "eenheid_naam": null,
+    "toestaan_deelgroep": true,
+    "volgorde": 99,
+    "actief": true,
     "locatie_id": null,
     "book_process_id": null,
-    "prijs_per_persoon": 15,
-    "_prijs_comment": "Handmatig overgenomen uit de Recras-productinstellingen (verkoopsprijs incl. btw, per persoon). Nog niet live opgehaald uit Recras zelf - zie README voor waarom en hoe dat later kan."
+    "_comment": "Testproduct, blijft staan voor regressietests."
   }
 }
