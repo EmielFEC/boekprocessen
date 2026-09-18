@@ -292,7 +292,10 @@
     try {
       const res = await fetch(`/api/plan/${slug}?datum=${datum}&aantal=${aantal}`);
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Onbekende fout');
+      if (!res.ok) {
+        const detail = data.details ? ' - ' + JSON.stringify(data.details) : '';
+        throw new Error((data.error || 'Onbekende fout') + detail);
+      }
 
       huidigPlan = data;
       renderPlan(data.plan);
@@ -393,7 +396,10 @@
         body: JSON.stringify(payload),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Onbekende fout');
+      if (!res.ok) {
+        const detail = data.details ? ' - ' + JSON.stringify(data.details) : '';
+        throw new Error((data.error || 'Onbekende fout') + detail);
+      }
 
       const boeking = data.boeking;
       const regelsHtml = (boeking.boekingsregels || [])

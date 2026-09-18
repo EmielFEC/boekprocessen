@@ -57,7 +57,9 @@ async function recrasRequest(path, { method = 'GET', body } = {}) {
  * `begin` is exclusief, `eind` is inclusief (zoals de Recras API het wil).
  */
 async function getBeschikbaarheid(productId, begin, eind) {
-  const params = new URLSearchParams({ eind });
+  // cache=force_off: negeer Recras' eigen cache. Zonder dit kan een net
+  // toegevoegd startmoment nog even niet zichtbaar zijn in dit endpoint.
+  const params = new URLSearchParams({ eind, cache: 'force_off' });
   if (begin) params.set('begin', begin);
 
   const { data } = await recrasRequest(
